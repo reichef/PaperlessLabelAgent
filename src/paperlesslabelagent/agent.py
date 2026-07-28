@@ -1,67 +1,67 @@
 
-import json
+
 import os
 from typing import Any
 
-import requests
 from dotenv import load_dotenv
 from ollama import chat
+from langchain_ollama import ChatOllama
+from langchain.messages import AIMessage
+from langchain.tools import tool
+import pymupdf
+from tools.paperlesstools import list_tags_correspondents_and_document_types
+
 
 load_dotenv()
 
 url = os.getenv("API_URL")
 account = os.getenv("ACCOUNT")
 password = os.getenv("PASSWORD")
+input_folder = os.getenv("INPUT_FOLDER")
 
 MODEL = "qwen3.5:9b"
 
-SYSTEM_PROMPT = """Du bist ein Agent, der mir die Informationen über Labels, Correspondents und Document Types in Paperless-ngx liefert.
-Regeln:
-- Lese die Labels, Correspondents und Document Types aus Paperless-ngx aus. Benutze hierfür das Tool list_tags_correspondents_and_document_types.
-- Gib diese Informationen in deiner Antwort an den Benutzer zurueck. Fasse die Ergebnisse kurz und verständlich zusammen.
+SYSTEM_PROMPT = f"""You are an agent that labels documents in Paperless-ngx.
+Rules:
+- Read the labels, correspondents and document types from Paperless-ngx from the API at {url} with the account {account} and the password {password}.
+- Analyze the files in the folder {input_folder} and determine which labels, correspondents and document types fit the files best. If no matching label, correspondent or document type is found, output an appropriate message for the corresponding file.
 """
 
 
-def list_tags_correspondents_and_document_types() -> dict[str, Any]:
-    """Liefert Labels, Correspondents und Document Types aus Paperless-ngx."""
-    if not url:
-        raise RuntimeError("API_URL ist nicht gesetzt. Bitte .env prüfen.")
 
-    label_url = f"{url}/tags/"
-    correspondent_url = f"{url}/correspondents/"
-    document_type_url = f"{url}/document_types/"
+@tool
+def translate_files_in_input_folder(input_folder: str) -> dict[str, Any]:
+    """Analyzes the files in the input folder and returns for each file the contained text."""
 
-    response_labels = requests.get(label_url, auth=(account, password), timeout=10)
-    response_correspondents = requests.get(correspondent_url, auth=(account, password), timeout=10)
-    response_document_types = requests.get(document_type_url, auth=(account, password), timeout=10)
+    if not os.path.exists(input_folder):
+        raise RuntimeError(f"Input folder '{input_folder}' does not exist.")
 
-    response_labels.raise_for_status()
-    response_correspondents.raise_for_status()
-    response_document_types.raise_for_status()
+    fileContents = {}
+    for filename in os.listdir(input_folder):
+        file_path = os.path.join(input_folder, filename)
 
-    return {
-        "labels": response_labels.json(),
-        "correspondents": response_correspondents.json(),
-        "document_types": response_document_types.json(),
-    }
+        #TODO We can add other file types supported by Paperless-ngx here, but for now, we will just handle PDF files.
+        content = extractTextFromPDF(filename, file_path)
+        fileContents[filename] = content
 
+    return fileContents
 
-def build_summary_text(data: dict[str, Any]) -> str:
-    """Erstellt eine einfache, lesbare Zusammenfassung der Paperless-Daten."""
-    labels = data.get("labels", {}).get("results", [])
-    correspondents = data.get("correspondents", {}).get("results", [])
-    document_types = data.get("document_types", {}).get("results", [])
+def extractTextFromPDF(filename: str, file_path: str) -> str:
+    """Extracts text from a PDF file using PyMuPDF."""
+    if not os.path.isfile(file_path):
+        raise RuntimeError(f"File '{file_path}' does not exist.")
 
-    parts: list[str] = []
-    for item in labels:
-        parts.append(f"Label: {item.get('name', '')}")
-    for item in correspondents:
-        parts.append(f"Correspondent: {item.get('name', '')}")
-    for item in document_types:
-        parts.append(f"Document Type: {item.get('name', '')}")
+    if not filename.lower().endswith((".pdf")):
+        raise RuntimeError(f"File '{file_path}' is not a PDF file.")
 
-    return "\n".join(parts)
+    document = pymupdf.open(file_path)
+    text = ""
 
+    for page in document:
+        text += page.get_text()
+    # TODO We can also add some logic here to analyze the images in the PDF, but for now, we will just extract the text.
+
+    return text
 
 def run_agent() -> None:
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -70,7 +70,7 @@ def run_agent() -> None:
 
     if response.message.tool_calls:
         call = response.message.tool_calls[0]
-        result = list_tags_correspondents_and_document_types()
+        result = list_tags_correspondents_and_document_types(**call.function.arguments)
         messages.append(response.message)
         messages.append({"role": "tool", "tool_name": call.function.name, "content": str(result)})
 
@@ -83,7 +83,7 @@ def run_agent() -> None:
         print(final_response.message.content)
         return
 
-    print(response.message.content or "Keine Antwort vom Modell erhalten.")
+    print(response.message.content or "No answer received from the model.")
 
 
 if __name__ == "__main__":
