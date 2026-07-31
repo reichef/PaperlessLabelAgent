@@ -1,0 +1,181 @@
+import os
+from typing import Any
+
+from dotenv import load_dotenv
+from langchain_ollama import ChatOllama
+from pymupdf import Document, pymupdf
+
+from paperlesslabelagent.schemas import FileProposalModel
+from paperlesslabelagent.state import AgentState, FileProposal
+from paperlesslabelagent.tools.paperlesstools import list_tags_correspondents_and_document_types
+
+load_dotenv()
+
+
+MODEL = "qwen3.5:9b"
+TESSDATA_PATH = os.getenv("TESSDATA_PATH")
+OCR_LANGUAGES = "deu+eng+fra"
+
+
+def fetch_existing_entities(state: AgentState) -> dict[str, Any]:
+    """Step 1: Read tags, correspondents and document types from Paperless-ngx."""
+    existing_entities = list_tags_correspondents_and_document_types(os.getenv("API_URL"), os.getenv("ACCOUNT"), os.getenv("PASSWORD"))
+    return {"existingEntities": existing_entities}
+
+
+def load_documents(state: AgentState) -> dict[str, Any]:
+    """Step 2: Analyze the files in the input folder and extract their text content."""
+    input_folder = state["input_folder"]
+
+    if not os.path.exists(input_folder):
+        raise RuntimeError(f"Input folder '{input_folder}' does not exist.")
+
+    file_texts: dict[str, str] = {}
+    for filename in os.listdir(input_folder):
+        file_path = os.path.join(input_folder, filename)
+
+        # TODO We can add other file types supported by Paperless-ngx here, but for now, we will just handle PDF files.
+        file_texts[filename] = extractTextFromPDF(filename, file_path)
+
+    return {"file_texts": file_texts}
+
+
+def extractTextFromPDF(filename: str, file_path: str) -> str:
+    """Extracts text from a PDF file using PyMuPDF."""
+    if not os.path.isfile(file_path):
+        raise RuntimeError(f"File '{file_path}' does not exist.")
+
+    if not filename.lower().endswith((".pdf")):
+        raise RuntimeError(f"File '{file_path}' is not a PDF file.")
+
+    document: Document = pymupdf.open(file_path)
+    text = ""
+
+    for page in document:
+        textpage = page.get_textpage_ocr(dpi=300, full=False, language=OCR_LANGUAGES, tessdata=TESSDATA_PATH)
+        text += page.get_text(textpage=textpage)
+
+    return text
+
+
+MATCH_SYSTEM_PROMPT = """You are an assistant that labels documents for Paperless-ngx.
+For the given document text, decide the best-fitting tags, correspondent and document type.
+
+Rules:
+- Only choose an existing tag/correspondent/document type if you are reasonably confident it fits (confidence >= 0.6). Reference it by its exact id.
+- Ensure that the proposed tags, correspondent and document type exist in the provided list of existing entities.
+- A document can have zero, one or several tags.
+- A document has at most one correspondent and at most one document type.
+- If no existing tag fits well, propose new tags via `new_tags` instead of forcing a bad match.
+- If no existing correspondent or document type fits well, propose one via `new_correspondent` / `new_document_type` instead of forcing a bad match.
+- If you propose a new tag, correspondent or document type, provide a short description of it and explain why it fits the document.
+- Do not propose a new tag, correspondent or document type if a suitable existing one already exists.
+"""
+
+matcher = ChatOllama(model=MODEL, num_ctx=32768).with_structured_output(FileProposalModel)
+
+
+def format_entity(entities: dict[str, Any]) -> str:
+    items = entities.get("results", [])
+    if not items:
+        return "(none yet)"
+    return "\n".join(f'- id={item["id"]}, name="{item["name"]}"' for item in items)
+
+
+def build_user_prompt(filename: str, text: str, existing_entities: dict[str, Any]) -> str:
+    tags = format_entity(existing_entities.get("labels", {}))
+    correspondents = format_entity(existing_entities.get("correspondents", {}))
+    document_types = format_entity(existing_entities.get("document_types", {}))
+
+    return f"""Document: {filename}
+
+Existing tags:
+{tags}
+
+Existing correspondents:
+{correspondents}
+
+Existing document types:
+{document_types}
+
+Document text:
+{text}
+"""
+
+
+def propose_for_document(state: AgentState) -> dict[str, Any]:
+    """Step 3: For each not-yet-confirmed file, propose matching (or new) tags, correspondent and document type."""
+    existing_entities = state["existingEntities"]
+    proposals: dict[str, FileProposal] = dict(state.get("proposals", {}))
+
+    for filename, text in state["file_texts"].items():
+        if proposals.get(filename, {}).get("confirmed"):
+            continue
+
+        user_prompt = build_user_prompt(filename, text, existing_entities)
+        result: FileProposalModel = matcher.invoke(
+            [
+                {"role": "system", "content": MATCH_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+
+        proposals[filename] = {
+            "filename": filename,
+            "tags": [tag.model_dump() for tag in result.tags],
+            "correspondent": result.correspondent.model_dump() if result.correspondent else None,
+            "document_type": result.document_type.model_dump() if result.document_type else None,
+            "new_tags": [proposal.model_dump() for proposal in result.new_tags] or None,
+            "new_correspondent": result.new_correspondent.model_dump() if result.new_correspondent else None,
+            "new_document_type": result.new_document_type.model_dump() if result.new_document_type else None,
+            "confirmed": False,
+            "needs_retry": False,
+        }
+
+    return {"proposals": proposals}
+
+
+def print_proposals(state: AgentState) -> dict[str, Any]:
+    """Prints every file's proposal to the console (filename + matches only, no document text)."""
+    proposals = state.get("proposals", {})
+
+    if not proposals:
+        print("No proposals yet.")
+        return {}
+
+    for proposal in proposals.items():
+        print(f"\n=== {proposal[0]} ===")
+
+        if proposal[1]["tags"]:
+            for tag in proposal[1]["tags"]:
+                print(f'  Tag: "{tag["name"]}" (id={tag["id"]}, confidence={tag["confidence"]:.2f})')
+        else:
+            print("  Tags: (no match)")
+
+        correspondent = proposal[1]["correspondent"]
+        if correspondent:
+            print(f'  Correspondent: "{correspondent["name"]}" (id={correspondent["id"]}, confidence={correspondent["confidence"]:.2f})')
+        else:
+            print("  Correspondent: (no match)")
+
+        document_type = proposal[1]["document_type"]
+        if document_type:
+            print(f'  Document type: "{document_type["name"]}" (id={document_type["id"]}, confidence={document_type["confidence"]:.2f})')
+        else:
+            print("  Document type: (no match)")
+
+        for new_tag in proposal[1]["new_tags"] or []:
+            print(f'  New tag proposed: "{new_tag["name"]}" - {new_tag["description"]}')
+
+        new_correspondent = proposal[1]["new_correspondent"]
+        if new_correspondent:
+            print(f'  New correspondent proposed: "{new_correspondent["name"]}" - {new_correspondent["description"]}')
+
+        new_document_type = proposal[1]["new_document_type"]
+        if new_document_type:
+            print(f'  New document type proposed: "{new_document_type["name"]}" - {new_document_type["description"]}')
+
+    return {}
+
+
+
