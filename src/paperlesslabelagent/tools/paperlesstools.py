@@ -1,9 +1,33 @@
+import json
+from pathlib import Path
 from typing import Any
 
 import requests
 
+MOCK_DIR = Path(__file__).resolve().parents[3] / "test"
+
+
+def uses_mock_entities(ACCOUNT: str, PASSWORD: str) -> bool:
+    return "mock" in (ACCOUNT or "") and "mock" in (PASSWORD or "")
+
+
+def load_mock_entities() -> dict[str, Any]:
+    return {
+        "labels": json.loads((MOCK_DIR / "paperless_entity_mock_labels").read_text(encoding="utf-8")),
+        "correspondents": json.loads((MOCK_DIR / "paperless_entity_mock_correspondents").read_text(encoding="utf-8")),
+        "document_types": json.loads((MOCK_DIR / "paperless_entity_mock_documenttypes").read_text(encoding="utf-8")),
+    }
+
+
 def list_tags_correspondents_and_document_types(API_URL: str, ACCOUNT: str, PASSWORD: str) -> dict[str, Any]:
-    """Returns labels, correspondents and document types from Paperless-ngx."""
+    """Returns labels, correspondents and document types from Paperless-ngx.
+
+    If ACCOUNT and PASSWORD both contain the string "mock", the content of the mock files under test/ are
+    returned instead, so the agent can be tested without a Paperless-ngx instance.
+    """
+    if uses_mock_entities(ACCOUNT, PASSWORD):
+        return load_mock_entities()
+
     if not API_URL:
         raise RuntimeError("API_URL is not set. Please check the .env file.")
 
