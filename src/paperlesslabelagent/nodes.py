@@ -12,7 +12,7 @@ from paperlesslabelagent.tools.paperlesstools import list_tags_correspondents_an
 load_dotenv()
 
 
-MODEL = "qwen3.5:9b"
+MODEL = os.getenv("MODEL")
 TESSDATA_PATH = os.getenv("TESSDATA_PATH")
 OCR_LANGUAGES = "deu+eng+fra"
 
@@ -68,8 +68,9 @@ Rules:
 - A document has at most one correspondent and at most one document type.
 - If no existing tag fits well, propose new tags via `new_tags` instead of forcing a bad match.
 - If no existing correspondent or document type fits well, propose one via `new_correspondent` / `new_document_type` instead of forcing a bad match.
-- If you propose a new tag, correspondent or document type, provide a short description of it and explain why it fits the document.
 - Do not propose a new tag, correspondent or document type if a suitable existing one already exists.
+- If you propose a new tag, correspondent or document type, avoid additions to the name like (or similar)
+- Do not provide explanations for the entities proposed.
 """
 
 matcher = ChatOllama(model=MODEL, num_ctx=32768).with_structured_output(FileProposalModel)
@@ -177,5 +178,37 @@ def print_proposals(state: AgentState) -> dict[str, Any]:
 
     return {}
 
+def check_and_correct_proposals(state: AgentState) -> dict[str, Any]:
+    """Checks every proposal for erroneous assignments of hallucinated existing entries"""
 
+    existing_entities = state["existingEntities"]
+    tags = existing_entities.get("labels", {}).get("results", [])
+    correspondents = existing_entities.get("correspondents", {}).get("results", [])
+    document_types = existing_entities.get("document_types", {}).get("results", [])
 
+    correspondent_names = {item["name"] for item in correspondents}
+    document_type_names = {item["name"] for item in document_types}
+    correspondent_ids = {item["id"] for item in correspondents}
+    document_type_ids = {item["id"] for item in document_types}
+
+    proposals = state.get("proposals", {})
+
+    for proposal in proposals.items():
+
+        mappedTags = proposal[1]["tags"]
+        mappedCorrespondent = proposal[1]["correspondent"]
+        mappedDocumentType = proposal[1]["document_type"]
+
+        if mappedCorrespondent is not None and (mappedCorrespondent["id"] not in correspondent_ids or mappedCorrespondent["name"] not in correspondent_names) :
+            proposal[1]["correspondent"] = None
+            proposal[1]["needs_retry"] = True
+            print (f'Proposal for {proposal[0]} erroneous (e.g., LLM hallucinated) due to wrong Correspondent, set for retry \n')
+
+        if mappedDocumentType is not None and(mappedDocumentType["id"] not in document_type_ids or mappedDocumentType["name"] not in document_type_names):
+            proposal[1]["document_type"] = None
+            proposal[1]["needs_retry"] = True
+            print (f'Proposal for {proposal[0]} erroneous (e.g., LLM hallucinated) due to wrong Document Type, set for retry \n')
+
+        
+
+    return {"proposals": proposals}
