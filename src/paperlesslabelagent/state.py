@@ -33,6 +33,12 @@ class FileProposal(TypedDict):
     new_document_type: NewEntityProposal | None
     confirmed: bool
     needs_retry: bool
+    rejected_existing_correspondent: ExistingMatch | None
+    rejected_existing_documentType: ExistingMatch | None
+    rejected_existing_Tags: list[ExistingMatch]
+    rejected_new_correspondent: NewEntityProposal | None
+    rejected_new_documentType: NewEntityProposal | None
+    rejected_new_Tags: list[NewEntityProposal] | None
 
 
 class UploadResult(TypedDict):
