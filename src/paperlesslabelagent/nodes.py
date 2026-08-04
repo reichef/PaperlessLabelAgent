@@ -70,7 +70,7 @@ Rules:
 - If no existing correspondent or document type fits well, propose one via `new_correspondent` / `new_document_type` instead of forcing a bad match.
 - Do not propose a new tag, correspondent or document type if a suitable existing one already exists.
 - If you propose a new tag, correspondent or document type, avoid additions to the name like (or similar)
-- Do not provide explanations for the entities proposed.
+- There must be no (no match) in tag/correspondent/document type without a proposed new tag, new correspondent or new document type.
 """
 
 matcher = ChatOllama(model=MODEL, num_ctx=32768).with_structured_output(FileProposalModel)
@@ -136,6 +136,38 @@ def propose_for_document(state: AgentState) -> dict[str, Any]:
     return {"proposals": proposals}
 
 
+def print_proposal(proposal):
+    print(f"\n --- Proposition of assignments of tags, correspondent and document types === {proposal[0]} === as well as new ones labels, correspondents and document types ---")
+    
+    if proposal[1]["tags"]:
+        for tag in proposal[1]["tags"]:
+            print(f'  Tag: "{tag["name"]}" (id={tag["id"]}, confidence={tag["confidence"]:.2f})')
+        else:
+            print("  Tags: (no match)")
+    
+        correspondent = proposal[1]["correspondent"]
+        if correspondent:
+            print(f'  Correspondent: "{correspondent["name"]}" (id={correspondent["id"]}, confidence={correspondent["confidence"]:.2f})')
+        else:
+            print("  Correspondent: (no match)")
+    
+        document_type = proposal[1]["document_type"]
+        if document_type:
+            print(f'  Document type: "{document_type["name"]}" (id={document_type["id"]}, confidence={document_type["confidence"]:.2f})')
+        else:
+            print("  Document type: (no match)")
+    
+        for new_tag in proposal[1]["new_tags"] or []:
+            print(f'  New tag proposed: "{new_tag["name"]}" - {new_tag["description"]}')
+    
+        new_correspondent = proposal[1]["new_correspondent"]
+        if new_correspondent:
+            print(f'  New correspondent proposed: "{new_correspondent["name"]}" - {new_correspondent["description"]}')
+    
+        new_document_type = proposal[1]["new_document_type"]
+        if new_document_type:
+            print(f'  New document type proposed: "{new_document_type["name"]}" - {new_document_type["description"]}')
+
 def print_proposals(state: AgentState) -> dict[str, Any]:
     """Prints every file's proposal to the console (filename + matches only, no document text)."""
     proposals = state.get("proposals", {})
@@ -145,36 +177,7 @@ def print_proposals(state: AgentState) -> dict[str, Any]:
         return {}
 
     for proposal in proposals.items():
-        print(f"\n=== {proposal[0]} ===")
-
-        if proposal[1]["tags"]:
-            for tag in proposal[1]["tags"]:
-                print(f'  Tag: "{tag["name"]}" (id={tag["id"]}, confidence={tag["confidence"]:.2f})')
-        else:
-            print("  Tags: (no match)")
-
-        correspondent = proposal[1]["correspondent"]
-        if correspondent:
-            print(f'  Correspondent: "{correspondent["name"]}" (id={correspondent["id"]}, confidence={correspondent["confidence"]:.2f})')
-        else:
-            print("  Correspondent: (no match)")
-
-        document_type = proposal[1]["document_type"]
-        if document_type:
-            print(f'  Document type: "{document_type["name"]}" (id={document_type["id"]}, confidence={document_type["confidence"]:.2f})')
-        else:
-            print("  Document type: (no match)")
-
-        for new_tag in proposal[1]["new_tags"] or []:
-            print(f'  New tag proposed: "{new_tag["name"]}" - {new_tag["description"]}')
-
-        new_correspondent = proposal[1]["new_correspondent"]
-        if new_correspondent:
-            print(f'  New correspondent proposed: "{new_correspondent["name"]}" - {new_correspondent["description"]}')
-
-        new_document_type = proposal[1]["new_document_type"]
-        if new_document_type:
-            print(f'  New document type proposed: "{new_document_type["name"]}" - {new_document_type["description"]}')
+        print_proposal(proposal)
 
     return {}
 
@@ -199,16 +202,64 @@ def check_and_correct_proposals(state: AgentState) -> dict[str, Any]:
         mappedCorrespondent = proposal[1]["correspondent"]
         mappedDocumentType = proposal[1]["document_type"]
 
+        #TODO check everything for Erroneous existing tags as well
+
         if mappedCorrespondent is not None and (mappedCorrespondent["id"] not in correspondent_ids or mappedCorrespondent["name"] not in correspondent_names) :
-            proposal[1]["correspondent"] = None
-            proposal[1]["needs_retry"] = True
+           
             print (f'Proposal for {proposal[0]} erroneous (e.g., LLM hallucinated) due to wrong Correspondent, set for retry \n')
+            print (f'Should the proposed correspondent be used as new entity (y) or should we retry (n)?')
+
+            userInput : str
+            #TODO wait for user input
+
+            if(userInput == '(y)'):
+                proposal[1]["new_correspondent"] = proposal[1]["correspondent"]
+                proposal[1]["correspondent"] = None
+            else:
+                proposal[1]["rejected_existing_correspondent"] = proposal[1]["correspondent"]
+                proposal[1]["correspondent"] = None
+                proposal[1]["needs_retry"] |= True
+
 
         if mappedDocumentType is not None and(mappedDocumentType["id"] not in document_type_ids or mappedDocumentType["name"] not in document_type_names):
-            proposal[1]["document_type"] = None
-            proposal[1]["needs_retry"] = True
             print (f'Proposal for {proposal[0]} erroneous (e.g., LLM hallucinated) due to wrong Document Type, set for retry \n')
+            print (f'Should the proposed correspondent be used as new entity (y) or should we retry (n)?')
+            
+            userInput : str
+            #TODO wait for user input
+            
+            if(userInput == '(y)'):
+                proposal[1]["new_document_type"] = proposal[1]["document_type"]
+                proposal[1]["document_type"] = None
+            else:
+                proposal[1]["rejected_existing_documentType"] = proposal[1]["document_type"]
+                proposal[1]["document_type"] = None
+                proposal[1]["needs_retry"] |= True
+            
 
         
 
     return {"proposals": proposals}
+
+def user_verify_proposals(state: AgentState):
+    """
+    Interacts with the user to determine whether the proposals (assigned entities and new entities) 
+    provided by the AI fit the users oppinion
+    """
+
+    proposals = state.get("proposals", {})
+
+    for proposal in proposals.items():
+
+        if proposal.get[1]["needs_retry"] is True: 
+            continue # Skip already rejected proposals due to type errors
+
+        print_proposal(proposal=proposal)
+
+        proposalFullyAccepted: bool = False
+
+        print (f'Do you fully accept the proposed assignments and new entities?')
+
+        #TODO get response and translate to 
+
+
