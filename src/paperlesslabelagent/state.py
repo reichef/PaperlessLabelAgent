@@ -25,20 +25,20 @@ class FileProposal(TypedDict):
     """The agent's proposal for a single file's tags, correspondent and document type."""
 
     filename: str
-    tags: list[ExistingMatch]
-    correspondent: ExistingMatch | None
-    document_type: ExistingMatch | None
-    new_tags: list[NewEntityProposal] | None
-    new_correspondent: NewEntityProposal | None
-    new_document_type: NewEntityProposal | None
+    proposed_existing_tags: list[ExistingMatch]
+    proposed_existing_correspondent: ExistingMatch | None
+    proposed_existing_document_type: ExistingMatch | None
+    proposed_new_tags: list[NewEntityProposal] | None
+    proposed_new_correspondent: NewEntityProposal | None
+    proposed_new_document_type: NewEntityProposal | None
     confirmed: bool
     needs_retry: bool
     rejected_existing_correspondent: ExistingMatch | None
-    rejected_existing_documentType: ExistingMatch | None
-    rejected_existing_Tags: list[ExistingMatch]
+    rejected_existing_document_type: ExistingMatch | None
+    rejected_existing_tags: list[ExistingMatch]
     rejected_new_correspondent: NewEntityProposal | None
-    rejected_new_documentType: NewEntityProposal | None
-    rejected_new_Tags: list[NewEntityProposal] | None
+    rejected_new_document_type: NewEntityProposal | None
+    rejected_new_tags: list[NewEntityProposal] | None
 
 
 class UploadResult(TypedDict):

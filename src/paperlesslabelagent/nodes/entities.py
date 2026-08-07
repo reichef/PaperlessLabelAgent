@@ -1,9 +1,11 @@
 import os
 from typing import Any
+import pymupdf
+
+from paperlesslabelagent.config import OCR_LANGUAGES, TESSDATA_PATH
 
 from paperlesslabelagent.state import AgentState
 from paperlesslabelagent.tools.paperlesstools import build_summary_text, list_tags_correspondents_and_document_types
-from paperlesslabelagent.tools.pdftools import extractTextFromPDF
 
 
 def fetch_existing_entities(state: AgentState) -> dict[str, Any]:
@@ -31,3 +33,20 @@ def load_documents(state: AgentState) -> dict[str, Any]:
         file_texts[filename] = extractTextFromPDF(filename, file_path)
 
     return {"file_texts": file_texts}
+
+def extractTextFromPDF(filename: str, file_path: str) -> str:
+    """Extracts text from a PDF file using PyMuPDF."""
+    if not os.path.isfile(file_path):
+        raise RuntimeError(f"File '{file_path}' does not exist.")
+
+    if not filename.lower().endswith(".pdf"):
+        raise RuntimeError(f"File '{file_path}' is not a PDF file.")
+
+    document = pymupdf.open(file_path)
+    text = ""
+
+    for page in document:
+        textpage = page.get_textpage_ocr(dpi=300, full=False, language=OCR_LANGUAGES, tessdata=TESSDATA_PATH)
+        text += page.get_text(textpage=textpage)
+
+    return text
