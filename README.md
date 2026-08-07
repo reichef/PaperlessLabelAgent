@@ -15,14 +15,6 @@ Repetion is constrained by a threshold value.
 - [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) installed locally
 - A running [Paperless-ngx](https://docs.paperless-ngx.com/) instance — or use mock mode (see below) to try the agent without one
 
-## Installation
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate      # on Windows; use `source .venv/bin/activate` on macOS/Linux
-pip install -e .
-```
-
 ## Configuration
 
 Create a `.env` file in the project root with the following keys:
@@ -33,9 +25,11 @@ Create a `.env` file in the project root with the following keys:
 | `PASSWORD` | Paperless-ngx password |
 | `MODEL` | Ollama model tag to use for classification, e.g. `qwen3.5:9b` or `llama3:8b` |
 | `TESSDATA_PATH` | Path to your Tesseract `tessdata` directory |
+| `OCR_LANGUAGES` | Languages that should be handled by Tesseract OCR | 
 | `INPUT_FOLDER` | Folder containing the PDF documents to classify |
 
-**Mock mode**: if `ACCOUNT` and `PASSWORD` both contain the string `mock`, the agent skips the real Paperless-ngx API entirely and loads sample tags/correspondents/document types from `test/paperless-instance-mock` instead. 
+
+**Mock mode**: if `ACCOUNT` and `PASSWORD` both contain the string `mock`, the agent fetches sample tags/correspondents/document types from `test/paperless-instance-mock` instead of using the Paperless-ngx API on an running instance. 
 The corresponding files are named `paperless_entity_mock_[correspondents | documenttypes | tags]` respectively. 
 These files must contain valid json content according to the Paperless-ngx API.
 This functionality is used to omit the need for a running paperless-ngx instance. 
