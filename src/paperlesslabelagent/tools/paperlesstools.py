@@ -13,9 +13,9 @@ def uses_mock_entities(ACCOUNT: str, PASSWORD: str) -> bool:
 
 def load_mock_entities() -> dict[str, Any]:
     return {
-        "labels": json.loads((MOCK_DIR / "paperless_entity_mock_labels").read_text(encoding="utf-8")),
-        "correspondents": json.loads((MOCK_DIR / "paperless_entity_mock_correspondents").read_text(encoding="utf-8")),
-        "document_types": json.loads((MOCK_DIR / "paperless_entity_mock_documenttypes").read_text(encoding="utf-8")),
+        "labels": json.loads((MOCK_DIR / "paperless-instance-mock" / "paperless_entity_mock_tags").read_text(encoding="utf-8")),
+        "correspondents": json.loads((MOCK_DIR / "paperless-instance-mock" / "paperless_entity_mock_correspondents").read_text(encoding="utf-8")),
+        "document_types": json.loads((MOCK_DIR / "paperless-instance-mock" / "paperless_entity_mock_documenttypes").read_text(encoding="utf-8")),
     }
 
 
