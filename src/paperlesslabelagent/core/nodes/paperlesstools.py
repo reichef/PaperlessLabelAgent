@@ -4,7 +4,7 @@ from typing import Any
 
 import requests
 
-MOCK_DIR = Path(__file__).resolve().parents[3] / "test"
+MOCK_DIR = Path(__file__).resolve().parents[4] / "test"
 
 
 def uses_mock_entities(ACCOUNT: str, PASSWORD: str) -> bool:
@@ -13,14 +13,37 @@ def uses_mock_entities(ACCOUNT: str, PASSWORD: str) -> bool:
 
 def load_mock_entities() -> dict[str, Any]:
     return {
-        "labels": json.loads((MOCK_DIR / "paperless-instance-mock" / "paperless_entity_mock_tags").read_text(encoding="utf-8")),
+        "tags": json.loads((MOCK_DIR / "paperless-instance-mock" / "paperless_entity_mock_tags").read_text(encoding="utf-8")),
         "correspondents": json.loads((MOCK_DIR / "paperless-instance-mock" / "paperless_entity_mock_correspondents").read_text(encoding="utf-8")),
         "document_types": json.loads((MOCK_DIR / "paperless-instance-mock" / "paperless_entity_mock_documenttypes").read_text(encoding="utf-8")),
     }
 
+def get_Tags(API_URL: str, ACCOUNT: str, PASSWORD: str) -> Any:
+    """Gets all Tags from Paperless-ngx instance"""
+    tag_url = f"{API_URL}/tags/"
+    response_tags = requests.get(tag_url, auth=(ACCOUNT, PASSWORD), timeout=10)
+    response_tags.raise_for_status()
+    return response_tags.json()
+
+def get_Correspondents(API_URL: str, ACCOUNT: str, PASSWORD: str) -> Any:
+    """Gets all Correspondents from Paperless-ngx instance"""
+    correspondent_url = f"{API_URL}/correspondents/"
+    response_correspondents = requests.get(correspondent_url, auth=(ACCOUNT, PASSWORD), timeout=10)
+    response_correspondents.raise_for_status()
+
+    return response_correspondents.json()
+
+def get_Document_Types(API_URL: str, ACCOUNT: str, PASSWORD: str) -> Any:
+    """Gets all Document_Types from Paperless-ngx instance"""
+    document_type_url = f"{API_URL}/document_types/"
+    response_document_types = requests.get(document_type_url, auth=(ACCOUNT, PASSWORD), timeout=10)
+    response_document_types.raise_for_status()
+
+    return response_document_types.json()
+
 
 def list_tags_correspondents_and_document_types(API_URL: str, ACCOUNT: str, PASSWORD: str) -> dict[str, Any]:
-    """Returns labels, correspondents and document types from Paperless-ngx.
+    """Returns tags, correspondents and document types from Paperless-ngx.
 
     If ACCOUNT and PASSWORD both contain the string "mock", the content of the mock files under test/ are
     returned instead, so the agent can be tested without a Paperless-ngx instance.
@@ -31,34 +54,22 @@ def list_tags_correspondents_and_document_types(API_URL: str, ACCOUNT: str, PASS
     if not API_URL:
         raise RuntimeError("API_URL is not set. Please check the .env file.")
 
-    label_url = f"{API_URL}/tags/"
-    correspondent_url = f"{API_URL}/correspondents/"
-    document_type_url = f"{API_URL}/document_types/"
-
-    response_labels = requests.get(label_url, auth=(ACCOUNT, PASSWORD), timeout=10)
-    response_correspondents = requests.get(correspondent_url, auth=(ACCOUNT, PASSWORD), timeout=10)
-    response_document_types = requests.get(document_type_url, auth=(ACCOUNT, PASSWORD), timeout=10)
-
-    response_labels.raise_for_status()
-    response_correspondents.raise_for_status()
-    response_document_types.raise_for_status()
-
     return {
-        "labels": response_labels.json(),
-        "correspondents": response_correspondents.json(),
-        "document_types": response_document_types.json(),
+        "tags": get_Tags(API_URL=API_URL, ACCOUNT=ACCOUNT, PASSWORD=PASSWORD),
+        "correspondents": get_Correspondents(API_URL=API_URL, ACCOUNT=ACCOUNT, PASSWORD=PASSWORD),
+        "document_types": get_Document_Types(API_URL=API_URL, ACCOUNT=ACCOUNT, PASSWORD=PASSWORD),
     }
 
 
 def build_summary_text(data: dict[str, Any]) -> str:
     """Create a summary text from the data returned by list_tags_correspondents_and_document_types."""
-    labels = data.get("labels", {}).get("results", [])
+    tags = data.get("tags", {}).get("results", [])
     correspondents = data.get("correspondents", {}).get("results", [])
     document_types = data.get("document_types", {}).get("results", [])
 
     parts: list[str] = []
-    for item in labels:
-        parts.append(f"Label: {item.get('name', '')}")
+    for item in tags:
+        parts.append(f"Tag: {item.get('name', '')}")
     for item in correspondents:
         parts.append(f"Correspondent: {item.get('name', '')}")
     for item in document_types:

@@ -1,17 +1,21 @@
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, START, END
-from paperlesslabelagent.state import AgentState
-from paperlesslabelagent.nodes import *
 
+from paperlesslabelagent.core.nodes.entities import fetch_existing_entities, load_documents
+from paperlesslabelagent.strategies.sequential.nodes import (
+    check_and_correct_proposals,
+    print_proposals,
+    propose_for_document,
+    user_verify_proposals,
+)
+from paperlesslabelagent.strategies.sequential.state import SequentialAgentState
 
-# Total classification attempts allowed
 MAX_CLASSIFICATION_ATTEMPTS = 3
 
 
-def route_after_verification(state: AgentState) -> str:
-    """After user verification: if any proposal still needs retry, go re-propose those
-    files - unless the retry cap has been hit, in which case stop regardless, leaving
-    those files unconfirmed for the user to handle manually."""
+def route_after_verification(state: SequentialAgentState) -> str:
+    """After user verification: if any proposal still needs retry, re-classify those
+    files. Stop when MAX_CLASSIFICATION_ATTEMPTS are hit"""
     proposals = state.get("proposals", {})
     still_needs_retry = [filename for filename, proposal in proposals.items() if proposal.get("needs_retry")]
 
@@ -27,8 +31,7 @@ def route_after_verification(state: AgentState) -> str:
 
     return "propose_for_document"
 
-
-workflow = StateGraph(AgentState)
+workflow = StateGraph(SequentialAgentState)
 workflow.add_node(node="fetch_existing_entities", action=fetch_existing_entities)
 workflow.add_node(node="load_documents", action=load_documents)
 workflow.add_node(node="propose_for_document", action=propose_for_document)

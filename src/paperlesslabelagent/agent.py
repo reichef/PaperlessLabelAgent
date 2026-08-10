@@ -1,30 +1,26 @@
 import os
 from dotenv import load_dotenv
-from langgraph.types import Command
-from paperlesslabelagent.graph import graph
-from paperlesslabelagent.nodes.review import collect_hallucination_answer, collect_review_answer
+from paperlesslabelagent.core.driver import run_interactive
+from paperlesslabelagent.strategies.iterative.graph import graph as iterative_graph
+from paperlesslabelagent.strategies.sequential.graph import graph as sequential_graph
 
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 input_folder = os.getenv("INPUT_FOLDER")
-config = {"configurable": {"thread_id": "paperless-label-run"}}
+
+STRATEGIES = {"sequential": sequential_graph, "iterative": iterative_graph}
+STRATEGY = os.getenv("STRATEGY", "iterative")
 
 if __name__ == "__main__":
-    result = graph.invoke({"input_folder": f"{input_folder}"}, config=config)
+    if STRATEGY not in STRATEGIES:
+        raise RuntimeError(f"Unknown STRATEGY '{STRATEGY}' - expected one of {sorted(STRATEGIES)}.")
 
-    while "__interrupt__" in result:
-        interrupt_content = result["__interrupt__"][0].value
-        if interrupt_content["kind"] == "hallucination":
-            answer = collect_hallucination_answer(interrupt_content)
-        else:  # "verify"
-            answer = collect_review_answer(interrupt_content)
-        result = graph.invoke(Command(resume=answer), config=config)
+    result = run_interactive(STRATEGIES[STRATEGY], {"input_folder": f"{input_folder}"}, thread_id="paperless-label-run")
 
     unconfirmed = [filename for filename, proposal in result.get("proposals", {}).items() if not proposal.get("confirmed")]
     if unconfirmed:
         print(f"\nDone — {len(unconfirmed)} file(s) hit the retry limit and remain unconfirmed: {', '.join(unconfirmed)}")
     else:
         print("\nDone — all proposals confirmed.")
-

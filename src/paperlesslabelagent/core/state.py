@@ -59,5 +59,4 @@ class AgentState(TypedDict):
     confirmed_new_entities: list[NewEntityProposal]
     created_entity_ids: dict[str, int]
 
-    iteration: int
     upload_results: dict[str, UploadResult]
