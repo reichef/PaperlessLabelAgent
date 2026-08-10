@@ -6,7 +6,11 @@ It asks you to confirm every proposition before finalizing the classification.
 It reads the tags, correspondents and document types that already exist in your Paperless-ngx instance.
 Then, the Agent uses a local LLM (via [Ollama](https://ollama.com/)) to either match a document against those existing entities or, if no enity fits, propose new ones. You review every proposal for its correctness.
 Any rejected entity (either existing or new one) is reclassified automatically, with your rejection fed back into the next attempt so the model doesn't repeat the same mistake.
-Repetion is constrained by a threshold value. 
+Repetion is constrained by a threshold value.
+
+For this, two execution strategies are available (see `STRATEGY` below):
+- **iterative** (default) — classifies, reviews and confirms one document fully before moving to the next. This strategy is recommended because it avoids the need for unifying all newly recommended entities based on their semantics. 
+- **sequential** (default) — classifies every document first, then reviews them one by one. Requires functionality for unifying all newly recommended entities based on their semantics (not yet implemented)
 
 ## Requirements
 
@@ -27,6 +31,8 @@ Create a `.env` file in the project root with the following keys:
 | `TESSDATA_PATH` | Path to your Tesseract `tessdata` directory |
 | `OCR_LANGUAGES` | Languages that should be handled by Tesseract OCR | 
 | `INPUT_FOLDER` | Folder containing the PDF documents to classify |
+| `STRATEGY` | Execution strategy: `sequential` or `iterative` (default)  |
+| `ENTITY_LANGUAGE` | Language(s) the LLMs are promted to provide entities for |
 
 
 **Mock mode**: if `ACCOUNT` and `PASSWORD` both contain the string `mock`, the agent fetches sample tags/correspondents/document types from `test/paperless-instance-mock` instead of using the Paperless-ngx API on an running instance. 
@@ -42,6 +48,8 @@ python -m paperlesslabelagent.agent
 ```
 
 The agent will fetch your existing entities, process every PDF in `INPUT_FOLDER`, and then walk promts each proposal in the terminal, asking `[y/n]` questions as needed. Once every file is either confirmed or has exhausted its retry attempts, the run ends with a summary of what was and wasn't resolved.
+
+For setting the execution strategy, for example, set `STRATEGY=iterative` in `.env` (or `STRATEGY=iterative python -m paperlesslabelagent.agent`) to use the iterative strategy.
 
 ## Current limitations
 
