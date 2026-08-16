@@ -8,7 +8,6 @@ from paperlesslabelagent.core.state import EntityType
 class ExistingMatchModel(BaseModel):
     """A proposed match against an entity that already exists in Paperless-ngx."""
 
-    id: int
     name: str
     confidence: float = Field(ge=0, le=1)
     reasoning: str

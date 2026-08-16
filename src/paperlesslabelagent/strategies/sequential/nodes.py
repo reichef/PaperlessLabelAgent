@@ -1,6 +1,7 @@
 from typing import Any
 
 from paperlesslabelagent.core.nodes.classification import classify_document
+from paperlesslabelagent.core.nodes.entities import merge_confirmed_new_entities
 from paperlesslabelagent.core.nodes.review import apply_review_answer, check_and_correct_single_proposal, print_proposal
 from paperlesslabelagent.core.state import FileProposal
 from paperlesslabelagent.strategies.sequential.state import SequentialAgentState
@@ -66,12 +67,17 @@ def user_verify_proposals(state: SequentialAgentState) -> dict[str, Any]:
     pauses with the full proposal.
     """
     proposals: dict[str, FileProposal] = dict(state.get("proposals", {}))
+    existing_entities = state["existingEntities"]
+    confirmed_new_entities = state.get("confirmed_new_entities", [])
 
     for filename, proposal in proposals.items():
         if proposal.get("confirmed") or proposal.get("needs_retry"):
             continue  # already resolved on a prior pass through the retry loop
 
         answer = interrupt({"kind": "verify", "filename": filename, "proposal": proposal})
-        proposals[filename] = apply_review_answer(proposal, answer)
+        proposal = apply_review_answer(proposal, answer)
+        proposals[filename] = proposal
+        if proposal.get("confirmed"):
+            existing_entities, confirmed_new_entities = merge_confirmed_new_entities(existing_entities, proposal, confirmed_new_entities)
 
-    return {"proposals": proposals}
+    return {"proposals": proposals, "existingEntities": existing_entities, "confirmed_new_entities": confirmed_new_entities}

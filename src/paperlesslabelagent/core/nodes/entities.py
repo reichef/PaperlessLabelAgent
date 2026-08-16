@@ -13,8 +13,6 @@ def fetch_existing_entities(state: AgentState) -> dict[str, Any]:
 
     existing_entities = list_tags_correspondents_and_document_types(os.getenv("API_URL"), os.getenv("ACCOUNT"), os.getenv("PASSWORD"))
 
-    #print(f"Existing entities fetched from Paperless-ngx:\n{build_summary_text(existing_entities)}")
-
     return {"existingEntities": existing_entities}
 
 
