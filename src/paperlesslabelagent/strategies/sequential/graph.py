@@ -2,6 +2,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, START, END
 
 from paperlesslabelagent.core.nodes.entities import fetch_existing_entities, load_documents
+from paperlesslabelagent.core.nodes.resultpersistence import persist_new_entities
 from paperlesslabelagent.strategies.sequential.nodes import (
     check_and_correct_proposals,
     print_proposals,
@@ -38,6 +39,7 @@ workflow.add_node(node="propose_for_document", action=propose_for_document)
 workflow.add_node(node="print_proposals", action=print_proposals)
 workflow.add_node(node="check_and_correct_proposals", action=check_and_correct_proposals)
 workflow.add_node(node="user_verify_proposals", action=user_verify_proposals)
+workflow.add_node(node="persist_new_entities", action=persist_new_entities)
 
 workflow.add_edge(START, "fetch_existing_entities")
 workflow.add_edge("fetch_existing_entities", "load_documents")
@@ -46,7 +48,8 @@ workflow.add_edge("propose_for_document", "print_proposals")
 workflow.add_edge("print_proposals", "check_and_correct_proposals")
 workflow.add_edge("check_and_correct_proposals", "user_verify_proposals")
 workflow.add_conditional_edges("user_verify_proposals", route_after_verification,
-    {"propose_for_document": "propose_for_document", END: END},
+    {"propose_for_document": "propose_for_document", END: "persist_new_entities"},
 )
+workflow.add_edge("persist_new_entities", END)
 
 graph = workflow.compile(checkpointer=InMemorySaver())

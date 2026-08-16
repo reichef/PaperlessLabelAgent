@@ -6,9 +6,9 @@ from paperlesslabelagent.core.config import MODEL, ENTITY_LANGUAGE
 from paperlesslabelagent.core.schemas import MatchModel, NewEntityProposalModel, build_new_entities_model
 from paperlesslabelagent.core.state import FileProposal
 
-# Documents whose extracted text exceeds this many characters are summarized by the
-# summarize_document_text subagent before being handed to the matcher, to keep the
-# classification prompt within the model's context window.
+# Describes the length of document text that is allowed to be passed to a classification LLM without summarization.
+# After this length, the text is summarized first, and the summary is passed to the LLM for classification instead. 
+# This avoids drawbacks of passing too much context into the LLM at once.
 MAX_DOCUMENT_CHARS = 30000
 
 
@@ -17,8 +17,8 @@ For the given document text, decide which existing tags, correspondent and docum
 
 Rules:
 - Carefully check the document text against every existing entity in the provided lists before deciding nothing fits.
-- Only choose an existing tag/correspondent/document type if you are reasonably confident it fits (confidence >= 0.6). Reference it by its exact id from the provided list.
-- Never invent an id or name that is not present in the provided list of existing entities.
+- Only choose an existing tag/correspondent/document type if you are reasonably confident it fits (confidence >= 0.6). Reference it by its exact name from the provided list.
+- Never invent a name that is not present in the provided list of existing entities.
 - A document can have zero, one or several tags.
 - A document has at most one correspondent and at most one document type.
 - If the prompt lists entities the user already rejected for this document, do not propose them again.
@@ -34,13 +34,13 @@ Rules:
 - If the prompt lists newly-proposed entities the user already rejected for this document, do not propose them again.
 """
 
-SUMMARIZER_SYSTEM_PROMPT = """You are an assistant that provides the parts of the given document text to support the extraction of labels, document_types and correspondents for Paperless-ngx.
+SUMMARIZER_SYSTEM_PROMPT = """You are an assistant that provides the parts of the given document text to support the extraction of tags, document_types and correspondents for Paperless-ngx.
 
 Rules:
-- Provide the text of the document, focusing on information that helps identify the appropriate labels, document_types and correspondents. Avoid including any irrelevant details or personal opinions.
+- Provide the text of the document, focusing on information that helps identify the appropriate tags, document_types and correspondents. Avoid including any irrelevant details or personal opinions.
 - Only provide the text that is relevant for classification
 - Do not addy any additional commentary or explanation.
-- Do not yourself provide the labels, document_types or correspondents. Only provide the text that is relevant for classification."""
+- Do not yourself provide the tags, document_types or correspondents. Only provide the text that is relevant for classification."""
 
 matcher = ChatOllama(model=MODEL, num_ctx=32768, temperature=0.3).with_structured_output(MatchModel)
 new_entity_proposer = ChatOllama(model=MODEL, num_ctx=32768, temperature=0.3)
@@ -52,14 +52,14 @@ def format_entity(entities: dict[str, Any]) -> str:
     items = entities.get("results", [])
     if not items:
         return "(none yet)"
-    return "\n".join(f'- id={item["id"]}, name="{item["name"]}"' for item in items)
+    return "\n".join(f'- "{item["name"]}"' for item in items)
 
 
 def format_rejected_existing_entities(items: list[dict[str, Any]]) -> str:
     """Formats a list of ExistingMatch entries the user already rejected for a document. Returns "" (nothing rendered) if there's nothing to report."""
     if not items:
         return ""
-    lines = "\n".join(f'- id={item["id"]}, name="{item["name"]}"' for item in items)
+    lines = "\n".join(f'- "{item["name"]}"' for item in items)
     return f"\nAlready rejected by the user for this document - do not propose these again:\n{lines}\n"
 
 

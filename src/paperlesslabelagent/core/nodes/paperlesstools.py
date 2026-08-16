@@ -5,7 +5,9 @@ from typing import Any
 import requests
 
 MOCK_DIR = Path(__file__).resolve().parents[4] / "test"
-
+TAGS_API_NAME = "tags"
+CORRESPONDENTS_API_NAME = "correspondents"
+DOCUMENT_TYPES_API_NAME = "document_types"
 
 def uses_mock_entities(ACCOUNT: str, PASSWORD: str) -> bool:
     return "mock" in (ACCOUNT or "") and "mock" in (PASSWORD or "")
@@ -18,28 +20,12 @@ def load_mock_entities() -> dict[str, Any]:
         "document_types": json.loads((MOCK_DIR / "paperless-instance-mock" / "paperless_entity_mock_documenttypes").read_text(encoding="utf-8")),
     }
 
-def get_Tags(API_URL: str, ACCOUNT: str, PASSWORD: str) -> Any:
-    """Gets all Tags from Paperless-ngx instance"""
-    tag_url = f"{API_URL}/tags/"
-    response_tags = requests.get(tag_url, auth=(ACCOUNT, PASSWORD), timeout=10)
-    response_tags.raise_for_status()
-    return response_tags.json()
-
-def get_Correspondents(API_URL: str, ACCOUNT: str, PASSWORD: str) -> Any:
-    """Gets all Correspondents from Paperless-ngx instance"""
-    correspondent_url = f"{API_URL}/correspondents/"
-    response_correspondents = requests.get(correspondent_url, auth=(ACCOUNT, PASSWORD), timeout=10)
-    response_correspondents.raise_for_status()
-
-    return response_correspondents.json()
-
-def get_Document_Types(API_URL: str, ACCOUNT: str, PASSWORD: str) -> Any:
-    """Gets all Document_Types from Paperless-ngx instance"""
-    document_type_url = f"{API_URL}/document_types/"
-    response_document_types = requests.get(document_type_url, auth=(ACCOUNT, PASSWORD), timeout=10)
-    response_document_types.raise_for_status()
-
-    return response_document_types.json()
+def _get_Entities(Entity_API_Name: str, API_URL: str, ACCOUNT: str, PASSWORD: str) -> Any:
+    """Gets the Entities with the Entity_API_Name from Paperless-ngx instance""" 
+    entity_url = f"{API_URL}/{Entity_API_Name}/"
+    response_entities = requests.get(entity_url, auth=(ACCOUNT, PASSWORD), timeout=10)
+    response_entities.raise_for_status()
+    return response_entities.json()
 
 
 def list_tags_correspondents_and_document_types(API_URL: str, ACCOUNT: str, PASSWORD: str) -> dict[str, Any]:
@@ -55,9 +41,9 @@ def list_tags_correspondents_and_document_types(API_URL: str, ACCOUNT: str, PASS
         raise RuntimeError("API_URL is not set. Please check the .env file.")
 
     return {
-        "tags": get_Tags(API_URL=API_URL, ACCOUNT=ACCOUNT, PASSWORD=PASSWORD),
-        "correspondents": get_Correspondents(API_URL=API_URL, ACCOUNT=ACCOUNT, PASSWORD=PASSWORD),
-        "document_types": get_Document_Types(API_URL=API_URL, ACCOUNT=ACCOUNT, PASSWORD=PASSWORD),
+        "tags": _get_Entities(Entity_API_Name=TAGS_API_NAME, API_URL=API_URL, ACCOUNT=ACCOUNT, PASSWORD=PASSWORD),
+        "correspondents": _get_Entities(Entity_API_Name=CORRESPONDENTS_API_NAME, API_URL=API_URL, ACCOUNT=ACCOUNT, PASSWORD=PASSWORD),
+        "document_types": _get_Entities(Entity_API_Name=DOCUMENT_TYPES_API_NAME, API_URL=API_URL, ACCOUNT=ACCOUNT, PASSWORD=PASSWORD),
     }
 
 
@@ -77,44 +63,29 @@ def build_summary_text(data: dict[str, Any]) -> str:
 
     return "\n".join(parts)
 
-def create_tag(tag: str, API_URL: str, ACCOUNT: str, PASSWORD: str) -> dict[str, Any]:
-    """Creates a new tag in Paperless-ngx and returns the created tag record (including its id)."""
+
+def _create_entity(Entity_API_Name: str, name: str, API_URL: str, ACCOUNT: str, PASSWORD: str) -> dict[str, Any]:
+    """Creates an entity with the Entity_API_Name in Paperless-ngx and returns the created record (including its id)."""
     if not API_URL:
         raise RuntimeError("API_URL is not set. Please check the .env file.")
 
-    tag_url = f"{API_URL}/tags/"
-    sendTag = {"name": tag}
-
-    response = requests.post(tag_url, json=sendTag, auth=(ACCOUNT, PASSWORD), timeout=10)
+    entity_url = f"{API_URL}/{Entity_API_Name}/"
+    response = requests.post(entity_url, json={"name": name}, auth=(ACCOUNT, PASSWORD), timeout=10)
     response.raise_for_status()
 
     return response.json()
+
+def create_tag(tag: str, API_URL: str, ACCOUNT: str, PASSWORD: str) -> dict[str, Any]:
+    """Creates a new tag in Paperless-ngx and returns the created tag record (including its id)."""
+    return _create_entity(TAGS_API_NAME, tag, API_URL, ACCOUNT, PASSWORD)
 
 def create_correspondent(correspondent: str, API_URL: str, ACCOUNT: str, PASSWORD: str) -> dict[str, Any]:
     """Creates a new correspondent in Paperless-ngx and returns the created record (including its id)."""
-    if not API_URL:
-        raise RuntimeError("API_URL is not set. Please check the .env file.")
-
-    correspondent_url = f"{API_URL}/correspondents/"
-    sendCorrespondent = {"name": correspondent}
-
-    response = requests.post(correspondent_url, json=sendCorrespondent, auth=(ACCOUNT, PASSWORD), timeout=10)
-    response.raise_for_status()
-
-    return response.json()
+    return _create_entity(CORRESPONDENTS_API_NAME, correspondent, API_URL, ACCOUNT, PASSWORD)
 
 def create_document_type(document_type: str, API_URL: str, ACCOUNT: str, PASSWORD: str) -> dict[str, Any]:
     """Creates a new document type in Paperless-ngx and returns the created record (including its id)."""
-    if not API_URL:
-        raise RuntimeError("API_URL is not set. Please check the .env file.")
-
-    document_type_url = f"{API_URL}/document_types/"
-    sendDocumentType = {"name": document_type}
-
-    response = requests.post(document_type_url, json=sendDocumentType, auth=(ACCOUNT, PASSWORD), timeout=10)
-    response.raise_for_status()
-
-    return response.json()
+    return _create_entity(DOCUMENT_TYPES_API_NAME, document_type, API_URL, ACCOUNT, PASSWORD)
 
 def upload_document(file_path: str, API_URL: str, ACCOUNT: str, PASSWORD: str, tag_ids: list[int], correspondent_id: int, document_type_id: int,) -> dict[str, Any]:
     """Uploads a document to Paperless-ngx with the given tags,correspondent and document type attached."""

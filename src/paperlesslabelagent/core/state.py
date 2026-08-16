@@ -6,7 +6,6 @@ EntityType = Literal["tag", "correspondent", "document_type"]
 class ExistingMatch(TypedDict):
     """A proposed match against an entity that already exists in the set of tags, correspondents and document types"""
 
-    id: int
     name: str
     confidence: float
     reasoning: str

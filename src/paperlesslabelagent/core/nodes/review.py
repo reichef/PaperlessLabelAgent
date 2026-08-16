@@ -6,23 +6,23 @@ from paperlesslabelagent.core.state import FileProposal
 
 
 def print_proposal(proposal):
-    print(f"\n --- Proposition of assignments of tags, correspondent and document types === {proposal[0]} === as well as new ones labels, correspondents and document types ---")
+    print(f"\n --- Proposition of assignments of tags, correspondent and document types === {proposal[0]} === as well as new ones tags, correspondents and document types ---")
 
     if proposal[1]["proposed_existing_tags"]:
         for tag in proposal[1]["proposed_existing_tags"]:
-            print(f'  Tag: "{tag["name"]}" (id={tag["id"]}, confidence={tag["confidence"]:.2f})')
+            print(f'  Tag: "{tag["name"]}" (confidence={tag["confidence"]:.2f})')
     else:
         print("  Tags: (no match)")
 
     correspondent = proposal[1]["proposed_existing_correspondent"]
     if correspondent:
-        print(f'  Correspondent: "{correspondent["name"]}" (id={correspondent["id"]}, confidence={correspondent["confidence"]:.2f})')
+        print(f'  Correspondent: "{correspondent["name"]}" (confidence={correspondent["confidence"]:.2f})')
     else:
         print("  Correspondent: (no match)")
 
     document_type = proposal[1]["proposed_existing_document_type"]
     if document_type:
-        print(f'  Document type: "{document_type["name"]}" (id={document_type["id"]}, confidence={document_type["confidence"]:.2f})')
+        print(f'  Document type: "{document_type["name"]}" (confidence={document_type["confidence"]:.2f})')
     else:
         print("  Document type: (no match)")
 
@@ -57,7 +57,7 @@ def check_and_correct_single_proposal(filename: str, proposal: FileProposal, exi
     """Checks a single proposal for erroneous assignments of hallucinated existing entries.
 
     For every tag/correspondent/document_type the LLM matched that doesn't actually exist
-    in existing_entities (id/name not found), and asks whether to
+    in existing_entities (name not found), and asks whether to
     keep it as a new-entity proposal instead, or reject it and retry.
     """
 
@@ -65,13 +65,13 @@ def check_and_correct_single_proposal(filename: str, proposal: FileProposal, exi
     correspondents = existing_entities.get("correspondents", {}).get("results", [])
     document_types = existing_entities.get("document_types", {}).get("results", [])
 
-    tag_keys = {(item["id"], item["name"]) for item in tags}
-    correspondent_keys = {(item["id"], item["name"]) for item in correspondents}
-    document_type_keys = {(item["id"], item["name"]) for item in document_types}
+    tag_names = {item["name"] for item in tags}
+    correspondent_names = {item["name"] for item in correspondents}
+    document_type_names = {item["name"] for item in document_types}
 
     kept_tags = []
     for tag in proposal["proposed_existing_tags"]:
-        if (tag["id"], tag["name"]) in tag_keys:
+        if tag["name"] in tag_names:
             kept_tags.append(tag)
             continue
 
@@ -89,12 +89,12 @@ def check_and_correct_single_proposal(filename: str, proposal: FileProposal, exi
             proposal["needs_retry"] = True
     proposal["proposed_existing_tags"] = kept_tags
 
-    for proposed_existing_entity_type, entity_type, new_entity_type, rejected_new_entity_type, keyset in (
-        ("proposed_existing_correspondent", "correspondent", "proposed_new_correspondent", "rejected_new_correspondent", correspondent_keys),
-        ("proposed_existing_document_type", "document_type", "proposed_new_document_type", "rejected_new_document_type", document_type_keys),
+    for proposed_existing_entity_type, entity_type, new_entity_type, rejected_new_entity_type, names in (
+        ("proposed_existing_correspondent", "correspondent", "proposed_new_correspondent", "rejected_new_correspondent", correspondent_names),
+        ("proposed_existing_document_type", "document_type", "proposed_new_document_type", "rejected_new_document_type", document_type_names),
     ):
         value = proposal[proposed_existing_entity_type]
-        if value is None or (value["id"], value["name"]) in keyset:
+        if value is None or value["name"] in names:
             continue
 
         # Not a existing correspondent or document_type, hallucinated by LLM --- see comment above.
