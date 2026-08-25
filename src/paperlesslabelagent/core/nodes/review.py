@@ -65,13 +65,14 @@ def check_and_correct_single_proposal(filename: str, proposal: FileProposal, exi
     correspondents = existing_entities.get("correspondents", {}).get("results", [])
     document_types = existing_entities.get("document_types", {}).get("results", [])
 
-    tag_names = {item["name"] for item in tags}
-    correspondent_names = {item["name"] for item in correspondents}
-    document_type_names = {item["name"] for item in document_types}
+    tag_ids_by_name = {item["name"]: item["id"] for item in tags}
+    correspondent_ids_by_name = {item["name"]: item["id"] for item in correspondents}
+    document_type_ids_by_name = {item["name"]: item["id"] for item in document_types}
 
     kept_tags = []
     for tag in proposal["proposed_existing_tags"]:
-        if tag["name"] in tag_names:
+        if tag["name"] in tag_ids_by_name:
+            tag["id"] = tag_ids_by_name[tag["name"]]
             kept_tags.append(tag)
             continue
 
@@ -89,12 +90,15 @@ def check_and_correct_single_proposal(filename: str, proposal: FileProposal, exi
             proposal["needs_retry"] = True
     proposal["proposed_existing_tags"] = kept_tags
 
-    for proposed_existing_entity_type, entity_type, new_entity_type, rejected_new_entity_type, names in (
-        ("proposed_existing_correspondent", "correspondent", "proposed_new_correspondent", "rejected_new_correspondent", correspondent_names),
-        ("proposed_existing_document_type", "document_type", "proposed_new_document_type", "rejected_new_document_type", document_type_names),
+    for proposed_existing_entity_type, entity_type, new_entity_type, rejected_new_entity_type, ids_by_name in (
+        ("proposed_existing_correspondent", "correspondent", "proposed_new_correspondent", "rejected_new_correspondent", correspondent_ids_by_name),
+        ("proposed_existing_document_type", "document_type", "proposed_new_document_type", "rejected_new_document_type", document_type_ids_by_name),
     ):
         value = proposal[proposed_existing_entity_type]
-        if value is None or value["name"] in names:
+        if value is None:
+            continue
+        if value["name"] in ids_by_name:
+            value["id"] = ids_by_name[value["name"]]
             continue
 
         # Not a existing correspondent or document_type, hallucinated by LLM --- see comment above.

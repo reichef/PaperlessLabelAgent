@@ -32,7 +32,8 @@ Create a `.env` file in the project root with the following keys:
 | `OCR_LANGUAGES` | Languages that should be handled by Tesseract OCR | 
 | `INPUT_FOLDER` | Folder containing the PDF documents to classify |
 | `STRATEGY` | Execution strategy: `sequential` or `iterative` (default)  |
-| `ENTITY_LANGUAGE` | Language(s) the LLMs are promted to provide entities for |
+| `ENTITY_LANGUAGE` | Language(s) the LLMs are promted to provide entities for, provided in comma seperated full text values (e.g., english, german) |
+| `DELETE_INPUT_FILES_AFTER_UPLOAD` | Set to `true` to remove a file from `INPUT_FOLDER` once it has been uploaded to Paperless-ngx (default: files are kept) |
 
 
 **Mock mode**: if `ACCOUNT` and `PASSWORD` both contain the string `mock`, the agent fetches sample tags/correspondents/document types from `test/paperless-instance-mock` instead of using the Paperless-ngx API on an running instance. 

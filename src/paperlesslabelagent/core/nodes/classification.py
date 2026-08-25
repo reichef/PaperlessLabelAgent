@@ -29,7 +29,7 @@ NEW_ENTITY_SYSTEM_PROMPT = f"""You are an assistant that proposes new tags, corr
 Rules:
 - Only propose tags, correspondents and/or document types for the categories listed below - every category you're asked about had no confident existing match.
 - Do not propose a new tag, correspondent or document type if a suitable existing one already exists in the provided reference list; in that case leave the field empty (null, or an empty list for tags).
-- For new entities only use names from the languages {ENTITY_LANGUAGE}. Only propose terms in other languages, when REALLY no applicable term in {ENTITY_LANGUAGE} is available.
+- For new entities only use names from the languages {ENTITY_LANGUAGE}. Only propose terms in other languages, when no applicable term in {ENTITY_LANGUAGE} is available.
 - Avoid additions to the entity name like "(or similar)" or an explanation.
 - If the prompt lists newly-proposed entities the user already rejected for this document, do not propose them again.
 """
@@ -204,27 +204,29 @@ def classify_document(
         ]
     )
 
-    needs_tags = not match_result.tags
-    needs_correspondent = match_result.correspondent is None
-    needs_document_type = match_result.document_type is None
+
+    # If no entities have been proposed correctly, run the request for proposals of new entities.
+    needs_new_tags = not match_result.tags
+    needs_new_correspondent = match_result.correspondent is None
+    needs_new_document_type = match_result.document_type is None
 
     new_tags: list[NewEntityProposalModel] = []
     new_correspondent: NewEntityProposalModel | None = None
     new_document_type: NewEntityProposalModel | None = None
 
-    if needs_tags or needs_correspondent or needs_document_type:
+    if needs_new_tags or needs_new_correspondent or needs_new_document_type:
         new_entities_model = build_new_entities_model(
-            include_tags=needs_tags,
-            include_correspondent=needs_correspondent,
-            include_document_type=needs_document_type,
+            include_tags=needs_new_tags,
+            include_correspondent=needs_new_correspondent,
+            include_document_type=needs_new_document_type,
         )
         new_entities_prompt = build_new_entities_user_prompt(
             filename,
             text,
             existing_entities,
-            include_tags=needs_tags,
-            include_correspondent=needs_correspondent,
-            include_document_type=needs_document_type,
+            include_tags=needs_new_tags,
+            include_correspondent=needs_new_correspondent,
+            include_document_type=needs_new_document_type,
             rejected_new_tags=rejected_new_tags,
             rejected_new_correspondent=rejected_new_correspondent,
             rejected_new_document_type=rejected_new_document_type,

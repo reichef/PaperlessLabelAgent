@@ -59,7 +59,7 @@ def _add_entity_to_pool(
     temp_id = -(len(confirmed_new_entities) + 1)
     category_key = f"{entity_type}s"
     existing_entities.setdefault(category_key, {}).setdefault("results", []).append({"id": temp_id, "name": entity["name"]})
-    confirmed_new_entities.append(entity)
+    confirmed_new_entities.append({**entity, "id": temp_id})
 
 
 def merge_confirmed_new_entities(

@@ -2,7 +2,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, START, END
 
 from paperlesslabelagent.core.nodes.entities import fetch_existing_entities, load_documents
-from paperlesslabelagent.core.nodes.resultpersistence import persist_new_entities
+from paperlesslabelagent.core.nodes.resultpersistence import persist_file_proposals, persist_new_entities
 from paperlesslabelagent.strategies.iterative.nodes import classify_current_document, review_current_proposal, select_next_document
 from paperlesslabelagent.strategies.iterative.state import IterativeAgentState
 
@@ -20,6 +20,7 @@ workflow.add_node(node="load_documents", action=load_documents)
 workflow.add_node(node="classify_current_document", action=classify_current_document)
 workflow.add_node(node="review_current_proposal", action=review_current_proposal)
 workflow.add_node(node="persist_new_entities", action=persist_new_entities)
+workflow.add_node(node="persist_file_proposals", action=persist_file_proposals)
 
 workflow.add_edge(START, "fetch_existing_entities")
 workflow.add_edge("fetch_existing_entities", "load_documents")
@@ -28,6 +29,7 @@ workflow.add_edge("classify_current_document", "review_current_proposal")
 workflow.add_conditional_edges("review_current_proposal", route_after_review,
     {"classify_current_document": "classify_current_document", "persist_new_entities": "persist_new_entities"},
 )
-workflow.add_edge("persist_new_entities", END)
+workflow.add_edge("persist_new_entities", "persist_file_proposals")
+workflow.add_edge("persist_file_proposals", END)
 
 graph = workflow.compile(checkpointer=InMemorySaver())

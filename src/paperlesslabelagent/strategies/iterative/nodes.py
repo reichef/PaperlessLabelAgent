@@ -30,8 +30,7 @@ def select_next_document(state: IterativeAgentState) -> str | None:
 
 def classify_current_document(state: IterativeAgentState) -> dict[str, Any]:
     """Classifies the next eligible document."""
-
-    print("In Iterative")
+    
     filename = select_next_document(state)
     if filename is None:
         return {"current_filename": None}  # nothing left; route_after_review will end the run

@@ -1,4 +1,4 @@
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 EntityType = Literal["tag", "correspondent", "document_type"]
 
@@ -9,6 +9,9 @@ class ExistingMatch(TypedDict):
     name: str
     confidence: float
     reasoning: str
+    # Only present once the match has been verified against existing_entities (see
+    # check_and_correct_single_proposal) - the LLM itself never produces this, it only knows names.
+    id: NotRequired[int]
 
 
 class NewEntityProposal(TypedDict):
@@ -18,6 +21,9 @@ class NewEntityProposal(TypedDict):
     name: str
     description: str
     reasoning: str
+    # Only present once the entity has been folded into existing_entities with a placeholder id
+    # (see merge_confirmed_new_entities), later replaced by the real Paperless-ngx id on persist.
+    id: NotRequired[int]
 
 
 class FileProposal(TypedDict):
