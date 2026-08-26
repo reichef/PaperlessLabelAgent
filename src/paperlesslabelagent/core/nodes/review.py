@@ -42,6 +42,16 @@ def print_proposal(proposal):
         print("  New document type: (no match)")
 
 
+def _normalize_entity_name(name: str) -> str:
+    """Strips whitespace and a single matching pair of straight-quote characters some LLMs
+    echo back from the quoted reference list in the prompt (e.g. '"Frederik"' -> 'Frederik'),
+    which would otherwise make a real existing entity look hallucinated by exact-string match."""
+    name = name.strip()
+    if len(name) >= 2 and name[0] == name[-1] and name[0] in ('"', "'"):
+        name = name[1:-1].strip()
+    return name
+
+
 def ask_yes_no(question: str) -> bool:
     """Prompts on stdin for an explicit y/n answer, reprompting on invalid/empty input."""
     while True:
@@ -71,8 +81,10 @@ def check_and_correct_single_proposal(filename: str, proposal: FileProposal, exi
 
     kept_tags = []
     for tag in proposal["proposed_existing_tags"]:
-        if tag.name in tag_ids_by_name:
-            tag.id = tag_ids_by_name[tag.name]
+        normalized_name = _normalize_entity_name(tag.name)
+        if normalized_name in tag_ids_by_name:
+            tag.name = normalized_name
+            tag.id = tag_ids_by_name[normalized_name]
             kept_tags.append(tag)
             continue
 
@@ -97,8 +109,10 @@ def check_and_correct_single_proposal(filename: str, proposal: FileProposal, exi
         value = proposal[proposed_existing_entity_type]
         if value is None:
             continue
-        if value.name in ids_by_name:
-            value.id = ids_by_name[value.name]
+        normalized_name = _normalize_entity_name(value.name)
+        if normalized_name in ids_by_name:
+            value.name = normalized_name
+            value.id = ids_by_name[normalized_name]
             continue
 
         # Not a existing correspondent or document_type, hallucinated by LLM --- see comment above.

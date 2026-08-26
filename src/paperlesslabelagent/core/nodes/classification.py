@@ -52,7 +52,7 @@ def format_entity(entities: dict[str, Any]) -> str:
     items = entities.get("results", [])
     if not items:
         return "(none yet)"
-    return "\n".join(f'- "{item["name"]}"' for item in items)
+    return "\n".join(f'- {item["name"]}' for item in items)
 
 
 def format_rejected_existing_entities(items: list[ExistingMatch]) -> str:
