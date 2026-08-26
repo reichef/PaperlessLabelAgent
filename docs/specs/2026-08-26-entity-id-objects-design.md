@@ -71,9 +71,15 @@ must be an **explicit step**, not an incidental effect of shared references.
 
 **Existing entities** (already in Paperless-ngx): `check_and_correct_single_proposal` is
 already the single place that resolves a matched name against the `existingEntities` pool. It
-keeps doing exactly that, just via `tag.id = ...` instead of `tag["id"] = ...`. No new
-propagation step is needed here — there's exactly one `ExistingMatch` object per match, owned
-by exactly one `FileProposal`, and its id never changes again afterward.
+keeps doing exactly that, just via `tag.id = ...` instead of `tag["id"] = ...`. This id is
+*not* guaranteed to be final, though: the `existingEntities` pool it resolves against can
+itself already contain a not-yet-persisted new entity from an earlier proposal in the same run
+(folded in by `merge_confirmed_new_entities`, with a negative placeholder id — see
+"New entities" below). If a later document's match names that same entity,
+`check_and_correct_single_proposal` correctly resolves `tag.id` to whatever is in the pool at
+that moment, which is still the placeholder. So an `ExistingMatch` object can carry a negative
+placeholder id too, not just a `NewEntityProposal` — and it needs the same real-id propagation
+pass described below.
 
 **New entities**: two moments matter.
 
@@ -89,13 +95,16 @@ by exactly one `FileProposal`, and its id never changes again afterward.
 2. *Real-id resolution* (`core/nodes/resultpersistence.py::persist_new_entities`): this already
    computes `real_id_by_placeholder: dict[int, int]` by deduping on name against the
    `existingEntities` pool — that logic is unchanged (see Non-goals). New: an explicit
-   propagation pass walks every confirmed proposal's new-entity fields (`proposed_new_tags`,
-   `proposed_new_correspondent`, `proposed_new_document_type`) and, for any whose `.id` is a
-   key in `real_id_by_placeholder`, sets `.id` to the resolved real id. Correlating by
-   placeholder id (a plain `int`) rather than by object identity is what makes this safe across
-   checkpoint boundaries — `persist_new_entities` runs as a separate node, well after the
-   proposal and the entity pool have already been through at least one independent
-   checkpoint/resume cycle by the time it starts.
+   propagation pass walks **all six** of every confirmed proposal's tag/correspondent/
+   document_type fields — both the `proposed_existing_*` ones (per the correction above) and
+   the `proposed_new_*` ones — and, for any entity object whose `.id` is a key in
+   `real_id_by_placeholder`, sets `.id` to the resolved real id. Correlating by placeholder id
+   (a plain `int`) rather than by object identity is what makes this safe across checkpoint
+   boundaries — `persist_new_entities` runs as a separate node, well after the proposal and
+   the entity pool have already been through at least one independent checkpoint/resume cycle
+   by the time it starts. Missing the `proposed_existing_*` fields here was exactly the
+   Critical bug caught in final review: it let an `ExistingMatch`'s placeholder id survive
+   all the way to `persist_file_proposals` and get shipped to `upload_document`.
 
 ### Consumer simplification
 

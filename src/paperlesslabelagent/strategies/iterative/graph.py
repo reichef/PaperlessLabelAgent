@@ -1,10 +1,18 @@
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import StateGraph, START, END
 
 from paperlesslabelagent.core.nodes.entities import fetch_existing_entities, load_documents
 from paperlesslabelagent.core.nodes.resultpersistence import persist_file_proposals, persist_new_entities
+from paperlesslabelagent.core.state import ExistingMatch, NewEntityProposal
 from paperlesslabelagent.strategies.iterative.nodes import classify_current_document, review_current_proposal, select_next_document
 from paperlesslabelagent.strategies.iterative.state import IterativeAgentState
+
+# ExistingMatch/NewEntityProposal aren't on langgraph's built-in msgpack allowlist, so
+# checkpointing them (this graph interrupts on essentially every document, so it checkpoints
+# constantly) would otherwise emit a "deserializing unregistered type" warning that
+# langgraph says will become a hard error in a future version. Register them explicitly.
+CHECKPOINT_SERDE = JsonPlusSerializer(allowed_msgpack_modules=[ExistingMatch, NewEntityProposal])
 
 
 def route_after_review(state: IterativeAgentState) -> str:
@@ -32,4 +40,4 @@ workflow.add_conditional_edges("review_current_proposal", route_after_review,
 workflow.add_edge("persist_new_entities", "persist_file_proposals")
 workflow.add_edge("persist_file_proposals", END)
 
-graph = workflow.compile(checkpointer=InMemorySaver())
+graph = workflow.compile(checkpointer=InMemorySaver(serde=CHECKPOINT_SERDE))

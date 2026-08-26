@@ -2,7 +2,7 @@ import os
 from dataclasses import replace
 from typing import Any
 
-from paperlesslabelagent.core.state import AgentState, FileProposal, NewEntityProposal
+from paperlesslabelagent.core.state import AgentState, ExistingMatch, FileProposal, NewEntityProposal
 from paperlesslabelagent.core.nodes.paperlesstools import (
     TAGS_API_NAME, CORRESPONDENTS_API_NAME, DOCUMENT_TYPES_API_NAME,
     create_tag, create_correspondent, create_document_type, uses_mock_entities, upload_document,
@@ -28,14 +28,23 @@ def _simulate_upload(filename: str) -> dict[str, Any]:
     return {"task_id": f"mock-task-{filename}"}
 
 
-def _propagate_real_id(new_entity: NewEntityProposal | None, real_id_by_placeholder: dict[int, int]) -> None:
-    """Writes a new entity's real, server-assigned id onto its own proposal object once
-    persist_new_entities has resolved it. This can't rely on shared object identity with
-    confirmed_new_entities - LangGraph checkpoints each state key independently, so by the
-    time this node runs, the two are already separate copies even if they started out as the
-    same object when merge_confirmed_new_entities (core/nodes/entities.py) first set it."""
-    if new_entity is not None and new_entity.id in real_id_by_placeholder:
-        new_entity.id = real_id_by_placeholder[new_entity.id]
+def _propagate_real_id(entity: ExistingMatch | NewEntityProposal | None, real_id_by_placeholder: dict[int, int]) -> None:
+    """Writes an entity's real, server-assigned id onto its own proposal object once
+    persist_new_entities has resolved it. This applies to NewEntityProposal objects (which
+    start out with a negative placeholder id) as well as ExistingMatch objects, since an
+    ExistingMatch can also end up carrying a placeholder id - it resolves against whatever
+    was in existingEntities at the moment check_and_correct_single_proposal ran, and if that
+    pool already contained an earlier proposal's not-yet-persisted new entity (folded in by
+    merge_confirmed_new_entities), the match's id is that same placeholder. This can't rely
+    on shared object identity with confirmed_new_entities - LangGraph checkpoints each state
+    key independently, so by the time this node runs, the two are already separate copies
+    even if they started out as the same object when merge_confirmed_new_entities
+    (core/nodes/entities.py) first set it. Contrast this with _add_entity_to_pool (also in
+    core/nodes/entities.py), which does deliberately rely on shared object identity - safely,
+    because that mutation happens within a single node call, before any checkpoint boundary
+    is crossed."""
+    if entity is not None and entity.id in real_id_by_placeholder:
+        entity.id = real_id_by_placeholder[entity.id]
 
 
 # Precondition: The state now contains a list of confirmed assignments of existing entities (with positive ids) and new entities (with negative placeholder ids)
@@ -80,10 +89,14 @@ def persist_new_entities(state: AgentState) -> dict[str, Any]:
 
     proposals: dict[str, FileProposal] = dict(state.get("proposals", {}))
     for proposal in proposals.values():
-        for tag in proposal.get("proposed_new_tags") or []:
+        tags = list(proposal.get("proposed_existing_tags") or []) + list(proposal.get("proposed_new_tags") or [])
+        for tag in tags:
             _propagate_real_id(tag, real_id_by_placeholder)
-        _propagate_real_id(proposal.get("proposed_new_correspondent"), real_id_by_placeholder)
-        _propagate_real_id(proposal.get("proposed_new_document_type"), real_id_by_placeholder)
+        for key in (
+            "proposed_existing_correspondent", "proposed_new_correspondent",
+            "proposed_existing_document_type", "proposed_new_document_type",
+        ):
+            _propagate_real_id(proposal.get(key), real_id_by_placeholder)
 
     return {"existingEntities": existing_entities, "confirmed_new_entities": confirmed_new_entities, "proposals": proposals}
 
@@ -114,6 +127,24 @@ def persist_file_proposals(state: AgentState) -> dict[str, Any]:
 
         document_type = proposal.get("proposed_existing_document_type") or proposal.get("proposed_new_document_type")
         document_type_id = document_type.id if document_type else None
+
+        # Safety net: a tag is always accompanied by an id, but correspondent/document_type
+        # legitimately have no proposal at all (correspondent_id/document_type_id is then
+        # None by design, above). What must never happen is a *proposed* entity whose id is
+        # still None or a negative placeholder - that means persist_new_entities failed to
+        # resolve it (e.g. the propagation gap this guard was added to catch). Fail loudly
+        # instead of uploading a document with a corrupt/missing assignment - especially
+        # since DELETE_INPUT_FILES_AFTER_UPLOAD can then delete the only copy of the source
+        # file on top of that.
+        bad_tag_ids = [tag_id for tag_id in tag_ids if tag_id is None or tag_id < 0]
+        bad_correspondent = correspondent is not None and (correspondent_id is None or correspondent_id < 0)
+        bad_document_type = document_type is not None and (document_type_id is None or document_type_id < 0)
+        if bad_tag_ids or bad_correspondent or bad_document_type:
+            raise RuntimeError(
+                f"Refusing to upload '{filename}': unresolved or negative placeholder id(s) found "
+                f"(tag_ids={tag_ids}, correspondent_id={correspondent_id}, document_type_id={document_type_id}). "
+                "This indicates a bug in id propagation upstream of persist_file_proposals."
+            )
 
         file_path = os.path.join(state["input_folder"], filename)
         upload_results[filename] = _simulate_upload(filename) if is_mock \

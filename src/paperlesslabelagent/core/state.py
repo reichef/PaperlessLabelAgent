@@ -11,8 +11,13 @@ class ExistingMatch:
     name: str
     confidence: float
     reasoning: str
-    # Set once by check_and_correct_single_proposal, resolved against existing_entities by
-    # name - the LLM itself never produces this, it only knows names.
+    # Set by check_and_correct_single_proposal, resolved against existing_entities by name -
+    # the LLM itself never produces this, it only knows names. This may still be a negative
+    # placeholder id afterward: if the matched entity is itself a not-yet-persisted new entity
+    # from an earlier proposal (folded into existing_entities by merge_confirmed_new_entities,
+    # see core/nodes/entities.py), that's what's in the pool at match time. It's only
+    # guaranteed to be a real, positive Paperless-ngx id once persist_new_entities'
+    # propagation pass (core/nodes/resultpersistence.py) has run.
     id: int | None = None
 
 
