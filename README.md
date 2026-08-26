@@ -55,8 +55,7 @@ For setting the execution strategy, for example, set `STRATEGY=iterative` in `.e
 ## Current limitations
 
 - Only PDF files are currently supported.
-- No functionality yet to push anything back to Paperless-ngx (no document upload or entity-creation) (open TODO). 
-
+  
 ## License
 
 [Eclipse Public License 2.0](LICENSE)
