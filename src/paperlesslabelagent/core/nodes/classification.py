@@ -12,26 +12,33 @@ from paperlesslabelagent.core.state import ExistingMatch, FileProposal, NewEntit
 MAX_DOCUMENT_CHARS = 30000
 
 
-MATCH_SYSTEM_PROMPT = """You are an assistant that matches documents to existing tags, correspondents and document types for Paperless-ngx.
-For the given document text, decide which existing tags, correspondent and document type fit.
+# Identical for the match call and the new-entity call, and always the very first content in
+# both requests, so the two share a cacheable prefix on a single-instance Ollama server: the
+# new-entity call's prefill can reuse the match call's KV-cache instead of reprocessing the
+# document text and entity lists from scratch. Task-specific rules therefore live in the
+# per-call instructions appended at the END of the user prompt (see MATCH_INSTRUCTIONS /
+# NEW_ENTITY_INSTRUCTIONS below), not here.
+SYSTEM_PROMPT = """You are an assistant that classifies documents for Paperless-ngx: matching them against existing tags, correspondents and document types, and - only when explicitly instructed at the end of the prompt - proposing new ones for categories with no confident existing match.
 
-Rules:
-- Carefully check the document text against every existing entity in the provided lists before deciding nothing fits.
-- Only choose an existing tag/correspondent/document type if you are reasonably confident it fits (confidence >= 0.6). Reference it by its exact name from the provided list.
-- Never invent a name that is not present in the provided list of existing entities.
-- A document can have zero, one or several tags.
-- A document has at most one correspondent and at most one document type.
-- If the prompt lists entities the user already rejected for this document, do not propose them again.
+General rules:
+- Never invent a name that is not present in the provided list of existing entities when matching.
+- A document can have zero, one or several tags; at most one correspondent; at most one document type.
+- Follow the task-specific instructions at the end of the prompt exactly; they define which of the two tasks above you are being asked to perform right now.
 """
 
-NEW_ENTITY_SYSTEM_PROMPT = f"""You are an assistant that proposes new tags, correspondents and/or document types for Paperless-ngx, for a document where no existing entity was a good fit.
+MATCH_INSTRUCTIONS = """Task: match the document above against the existing tags, correspondent and document type listed above.
 
-Rules:
-- Only propose tags, correspondents and/or document types for the categories listed below - every category you're asked about had no confident existing match.
-- Do not propose a new tag, correspondent or document type if a suitable existing one already exists in the provided reference list; in that case leave the field empty (null, or an empty list for tags).
+- Carefully check the document text against every existing entity in the provided lists before deciding nothing fits.
+- Only choose an existing tag/correspondent/document type if you are reasonably confident it fits (confidence >= 0.6). Reference it by its exact name from the provided list.
+- If entities the user already rejected are listed above, do not propose them again.
+"""
+
+NEW_ENTITY_INSTRUCTIONS = f"""Task: no confident existing match was found for: {{requested}}. Propose new entities for these categories only.
+
+- Do not propose a new tag, correspondent or document type if a suitable existing one already exists in the provided reference lists above; in that case leave the field empty (null, or an empty list for tags).
 - For new entities only use names from the languages {ENTITY_LANGUAGE}. Only propose terms in other languages, when no applicable term in {ENTITY_LANGUAGE} is available.
 - Avoid additions to the entity name like "(or similar)" or an explanation.
-- If the prompt lists newly-proposed entities the user already rejected for this document, do not propose them again.
+- If newly-proposed entities the user already rejected are listed above, do not propose them again.
 """
 
 SUMMARIZER_SYSTEM_PROMPT = """You are an assistant that provides the parts of the given document text to support the extraction of tags, document_types and correspondents for Paperless-ngx.
@@ -71,6 +78,38 @@ def format_rejected_new_entities(items: list[NewEntityProposal]) -> str:
     return f"\nAlready rejected by the user for this document - do not propose these again:\n{lines}\n"
 
 
+def build_shared_context_block(
+    filename: str,
+    text: str,
+    existing_entities: dict[str, Any],
+    *,
+    is_summary: bool = False,
+) -> str:
+    """Builds the part of the user prompt that is identical between the match call and the
+    new-entity call - filename, all three existing-entity lists and the document text - with
+    nothing call-specific mixed in, so it can be reused byte-for-byte as the leading prefix of
+    both prompts (see SYSTEM_PROMPT for why that matters)."""
+    tags = format_entity(existing_entities.get("tags", {}))
+    correspondents = format_entity(existing_entities.get("correspondents", {}))
+    document_types = format_entity(existing_entities.get("document_types", {}))
+    text_label = "Document text (summarized, the original was too long to include in full)" if is_summary else "Document text"
+
+    return f"""Document: {filename}
+
+Existing tags:
+{tags}
+
+Existing correspondents:
+{correspondents}
+
+Existing document types:
+{document_types}
+
+{text_label}:
+{text}
+"""
+
+
 def build_user_prompt(
     filename: str,
     text: str,
@@ -81,30 +120,13 @@ def build_user_prompt(
     rejected_existing_document_type: ExistingMatch | None = None,
     is_summary: bool = False,
 ) -> str:
-    tags = format_entity(existing_entities.get("tags", {}))
-    correspondents = format_entity(existing_entities.get("correspondents", {}))
-    document_types = format_entity(existing_entities.get("document_types", {}))
+    shared_block = build_shared_context_block(filename, text, existing_entities, is_summary=is_summary)
 
     rejected_tags_section = format_rejected_existing_entities(rejected_existing_tags or [])
     rejected_correspondent_section = format_rejected_existing_entities([rejected_existing_correspondent] if rejected_existing_correspondent else [])
     rejected_document_type_section = format_rejected_existing_entities([rejected_existing_document_type] if rejected_existing_document_type else [])
 
-    text_label = "Document text (summarized, the original was too long to include in full)" if is_summary else "Document text"
-
-    return f"""Document: {filename}
-
-Existing tags:
-{tags}
-{rejected_tags_section}
-Existing correspondents:
-{correspondents}
-{rejected_correspondent_section}
-Existing document types:
-{document_types}
-{rejected_document_type_section}
-{text_label}:
-{text}
-"""
+    return f"{shared_block}\n{rejected_tags_section}{rejected_correspondent_section}{rejected_document_type_section}\n{MATCH_INSTRUCTIONS}"
 
 
 def build_new_entities_user_prompt(
@@ -120,36 +142,27 @@ def build_new_entities_user_prompt(
     rejected_new_document_type: NewEntityProposal | None = None,
     is_summary: bool = False,
 ) -> str:
-    """Builds the prompt for the new-entity-proposal step, listing only the existing-entity
-    reference lists for the categories that had no match (the ones actually being asked about)."""
-    sections = [f"Document: {filename}\n"]
-    requested = []
+    """Builds the prompt for the new-entity-proposal step. Shares its leading context block
+    byte-for-byte with build_user_prompt (all three existing-entity lists, even for categories
+    not being asked about here) so the two calls can share a cacheable prompt prefix; the
+    trailing task instructions scope the model to only the requested categories."""
+    shared_block = build_shared_context_block(filename, text, existing_entities, is_summary=is_summary)
 
+    requested = []
+    rejected_sections = ""
     if include_tags:
-        sections.append(f"Existing tags:\n{format_entity(existing_entities.get('tags', {}))}\n")
-        rejected_section = format_rejected_new_entities(rejected_new_tags or [])
-        if rejected_section:
-            sections.append(rejected_section)
+        rejected_sections += format_rejected_new_entities(rejected_new_tags or [])
         requested.append("new tags")
     if include_correspondent:
-        sections.append(f"Existing correspondents:\n{format_entity(existing_entities.get('correspondents', {}))}\n")
-        rejected_section = format_rejected_new_entities([rejected_new_correspondent] if rejected_new_correspondent else [])
-        if rejected_section:
-            sections.append(rejected_section)
+        rejected_sections += format_rejected_new_entities([rejected_new_correspondent] if rejected_new_correspondent else [])
         requested.append("a new correspondent")
     if include_document_type:
-        sections.append(f"Existing document types:\n{format_entity(existing_entities.get('document_types', {}))}\n")
-        rejected_section = format_rejected_new_entities([rejected_new_document_type] if rejected_new_document_type else [])
-        if rejected_section:
-            sections.append(rejected_section)
+        rejected_sections += format_rejected_new_entities([rejected_new_document_type] if rejected_new_document_type else [])
         requested.append("a new document type")
 
-    sections.append(f"No existing match was found for: {', '.join(requested)}. Propose new entities for these categories only.\n")
+    instructions = NEW_ENTITY_INSTRUCTIONS.format(requested=", ".join(requested))
 
-    text_label = "Document text (summarized, the original was too long to include in full)" if is_summary else "Document text"
-    sections.append(f"{text_label}:\n{text}")
-
-    return "\n".join(sections)
+    return f"{shared_block}\n{rejected_sections}\n{instructions}"
 
 
 
@@ -199,7 +212,7 @@ def classify_document(
     )
     match_result: MatchModel = matcher.invoke(
         [
-            {"role": "system", "content": MATCH_SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": match_prompt},
         ]
     )
@@ -234,7 +247,7 @@ def classify_document(
         )
         new_result = new_entity_proposer.with_structured_output(new_entities_model).invoke(
             [
-                {"role": "system", "content": NEW_ENTITY_SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": new_entities_prompt},
             ]
         )
