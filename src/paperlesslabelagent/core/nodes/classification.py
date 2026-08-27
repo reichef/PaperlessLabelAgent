@@ -4,7 +4,7 @@ from langchain_ollama import ChatOllama
 
 from paperlesslabelagent.core.config import MODEL, ENTITY_LANGUAGE
 from paperlesslabelagent.core.schemas import MatchModel, NewEntityProposalModel, build_new_entities_model
-from paperlesslabelagent.core.state import FileProposal
+from paperlesslabelagent.core.state import ExistingMatch, FileProposal, NewEntityProposal
 
 # Describes the length of document text that is allowed to be passed to a classification LLM without summarization.
 # After this length, the text is summarized first, and the summary is passed to the LLM for classification instead. 
@@ -52,22 +52,22 @@ def format_entity(entities: dict[str, Any]) -> str:
     items = entities.get("results", [])
     if not items:
         return "(none yet)"
-    return "\n".join(f'- "{item["name"]}"' for item in items)
+    return "\n".join(f'- {item["name"]}' for item in items)
 
 
-def format_rejected_existing_entities(items: list[dict[str, Any]]) -> str:
+def format_rejected_existing_entities(items: list[ExistingMatch]) -> str:
     """Formats a list of ExistingMatch entries the user already rejected for a document. Returns "" (nothing rendered) if there's nothing to report."""
     if not items:
         return ""
-    lines = "\n".join(f'- "{item["name"]}"' for item in items)
+    lines = "\n".join(f'- "{item.name}"' for item in items)
     return f"\nAlready rejected by the user for this document - do not propose these again:\n{lines}\n"
 
 
-def format_rejected_new_entities(items: list[dict[str, Any]]) -> str:
+def format_rejected_new_entities(items: list[NewEntityProposal]) -> str:
     """Formats a list of NewEntityProposal entries the user already rejected for a document. Returns "" (nothing rendered) if there's nothing to report."""
     if not items:
         return ""
-    lines = "\n".join(f'- "{item["name"]}" - {item["description"]}' for item in items)
+    lines = "\n".join(f'- "{item.name}" - {item.description}' for item in items)
     return f"\nAlready rejected by the user for this document - do not propose these again:\n{lines}\n"
 
 
@@ -76,9 +76,9 @@ def build_user_prompt(
     text: str,
     existing_entities: dict[str, Any],
     *,
-    rejected_existing_tags: list[dict[str, Any]] | None = None,
-    rejected_existing_correspondent: dict[str, Any] | None = None,
-    rejected_existing_document_type: dict[str, Any] | None = None,
+    rejected_existing_tags: list[ExistingMatch] | None = None,
+    rejected_existing_correspondent: ExistingMatch | None = None,
+    rejected_existing_document_type: ExistingMatch | None = None,
     is_summary: bool = False,
 ) -> str:
     tags = format_entity(existing_entities.get("tags", {}))
@@ -115,9 +115,9 @@ def build_new_entities_user_prompt(
     include_tags: bool,
     include_correspondent: bool,
     include_document_type: bool,
-    rejected_new_tags: list[dict[str, Any]] | None = None,
-    rejected_new_correspondent: dict[str, Any] | None = None,
-    rejected_new_document_type: dict[str, Any] | None = None,
+    rejected_new_tags: list[NewEntityProposal] | None = None,
+    rejected_new_correspondent: NewEntityProposal | None = None,
+    rejected_new_document_type: NewEntityProposal | None = None,
     is_summary: bool = False,
 ) -> str:
     """Builds the prompt for the new-entity-proposal step, listing only the existing-entity
@@ -173,12 +173,12 @@ def classify_document(
     text: str,
     existing_entities: dict[str, Any],
     *,
-    rejected_existing_tags: list[dict[str, Any]],
-    rejected_existing_correspondent: dict[str, Any] | None,
-    rejected_existing_document_type: dict[str, Any] | None,
-    rejected_new_tags: list[dict[str, Any]],
-    rejected_new_correspondent: dict[str, Any] | None,
-    rejected_new_document_type: dict[str, Any] | None,
+    rejected_existing_tags: list[ExistingMatch],
+    rejected_existing_correspondent: ExistingMatch | None,
+    rejected_existing_document_type: ExistingMatch | None,
+    rejected_new_tags: list[NewEntityProposal],
+    rejected_new_correspondent: NewEntityProposal | None,
+    rejected_new_document_type: NewEntityProposal | None,
 ) -> FileProposal:
     """Classifies a single document: matches it against existing entities, and for any category with no confident match, proposes a new entity instead. Returns a FileProposal, without touching any broader `proposals` collection itself.
     """
@@ -244,12 +244,27 @@ def classify_document(
 
     return {
         "filename": filename,
-        "proposed_existing_tags": [tag.model_dump() for tag in match_result.tags],
-        "proposed_existing_correspondent": match_result.correspondent.model_dump() if match_result.correspondent else None,
-        "proposed_existing_document_type": match_result.document_type.model_dump() if match_result.document_type else None,
-        "proposed_new_tags": [proposal.model_dump() for proposal in new_tags] or None,
-        "proposed_new_correspondent": new_correspondent.model_dump() if new_correspondent else None,
-        "proposed_new_document_type": new_document_type.model_dump() if new_document_type else None,
+        "proposed_existing_tags": [ExistingMatch(name=tag.name, confidence=tag.confidence, reasoning=tag.reasoning) for tag in match_result.tags],
+        "proposed_existing_correspondent": (
+            ExistingMatch(name=match_result.correspondent.name, confidence=match_result.correspondent.confidence, reasoning=match_result.correspondent.reasoning)
+            if match_result.correspondent else None
+        ),
+        "proposed_existing_document_type": (
+            ExistingMatch(name=match_result.document_type.name, confidence=match_result.document_type.confidence, reasoning=match_result.document_type.reasoning)
+            if match_result.document_type else None
+        ),
+        "proposed_new_tags": [
+            NewEntityProposal(entity_type=proposal.entity_type, name=proposal.name, description=proposal.description, reasoning=proposal.reasoning)
+            for proposal in new_tags
+        ] or None,
+        "proposed_new_correspondent": (
+            NewEntityProposal(entity_type=new_correspondent.entity_type, name=new_correspondent.name, description=new_correspondent.description, reasoning=new_correspondent.reasoning)
+            if new_correspondent else None
+        ),
+        "proposed_new_document_type": (
+            NewEntityProposal(entity_type=new_document_type.entity_type, name=new_document_type.name, description=new_document_type.description, reasoning=new_document_type.reasoning)
+            if new_document_type else None
+        ),
         "confirmed": False,
         "needs_retry": False,
         "rejected_existing_tags": rejected_existing_tags,

@@ -2,7 +2,7 @@ from typing import Any
 
 from langgraph.types import interrupt
 
-from paperlesslabelagent.core.state import FileProposal
+from paperlesslabelagent.core.state import FileProposal, NewEntityProposal
 
 
 def print_proposal(proposal):
@@ -10,36 +10,46 @@ def print_proposal(proposal):
 
     if proposal[1]["proposed_existing_tags"]:
         for tag in proposal[1]["proposed_existing_tags"]:
-            print(f'  Tag: "{tag["name"]}" (confidence={tag["confidence"]:.2f})')
+            print(f'  Tag: "{tag.name}" (confidence={tag.confidence:.2f})')
     else:
         print("  Tags: (no match)")
 
     correspondent = proposal[1]["proposed_existing_correspondent"]
     if correspondent:
-        print(f'  Correspondent: "{correspondent["name"]}" (confidence={correspondent["confidence"]:.2f})')
+        print(f'  Correspondent: "{correspondent.name}" (confidence={correspondent.confidence:.2f})')
     else:
         print("  Correspondent: (no match)")
 
     document_type = proposal[1]["proposed_existing_document_type"]
     if document_type:
-        print(f'  Document type: "{document_type["name"]}" (confidence={document_type["confidence"]:.2f})')
+        print(f'  Document type: "{document_type.name}" (confidence={document_type.confidence:.2f})')
     else:
         print("  Document type: (no match)")
 
     for new_tag in proposal[1]["proposed_new_tags"] or []:
-        print(f'  New tag proposed: "{new_tag["name"]}" - {new_tag["description"]}')
+        print(f'  New tag proposed: "{new_tag.name}" - {new_tag.description}')
 
     new_correspondent = proposal[1]["proposed_new_correspondent"]
     if new_correspondent:
-        print(f'  New correspondent proposed: "{new_correspondent["name"]}" - {new_correspondent["description"]}')
+        print(f'  New correspondent proposed: "{new_correspondent.name}" - {new_correspondent.description}')
     else:
         print("  New correspondent: (no match)")
 
     new_document_type = proposal[1]["proposed_new_document_type"]
     if new_document_type:
-        print(f'  New document type proposed: "{new_document_type["name"]}" - {new_document_type["description"]}')
+        print(f'  New document type proposed: "{new_document_type.name}" - {new_document_type.description}')
     else:
         print("  New document type: (no match)")
+
+
+def _normalize_entity_name(name: str) -> str:
+    """Strips whitespace and a single matching pair of straight-quote characters some LLMs
+    echo back from the quoted reference list in the prompt (e.g. '"Frederik"' -> 'Frederik'),
+    which would otherwise make a real existing entity look hallucinated by exact-string match."""
+    name = name.strip()
+    if len(name) >= 2 and name[0] == name[-1] and name[0] in ('"', "'"):
+        name = name[1:-1].strip()
+    return name
 
 
 def ask_yes_no(question: str) -> bool:
@@ -71,14 +81,16 @@ def check_and_correct_single_proposal(filename: str, proposal: FileProposal, exi
 
     kept_tags = []
     for tag in proposal["proposed_existing_tags"]:
-        if tag["name"] in tag_ids_by_name:
-            tag["id"] = tag_ids_by_name[tag["name"]]
+        normalized_name = _normalize_entity_name(tag.name)
+        if normalized_name in tag_ids_by_name:
+            tag.name = normalized_name
+            tag.id = tag_ids_by_name[normalized_name]
             kept_tags.append(tag)
             continue
 
         # Not a existing tag - the LLM hallucinated it. Use it as a new proposed entity instead of existing one.
         keep_as_new = interrupt({"kind": "hallucination", "entity_type": "tag", "filename": filename, "entity": tag})
-        new_tag_proposal = {"entity_type": "tag", "name": tag["name"], "description": tag["reasoning"], "reasoning": tag["reasoning"]}
+        new_tag_proposal = NewEntityProposal(entity_type="tag", name=tag.name, description=tag.reasoning, reasoning=tag.reasoning)
         if keep_as_new:
             new_tags = proposal.get("proposed_new_tags") or []
             new_tags.append(new_tag_proposal)
@@ -97,18 +109,15 @@ def check_and_correct_single_proposal(filename: str, proposal: FileProposal, exi
         value = proposal[proposed_existing_entity_type]
         if value is None:
             continue
-        if value["name"] in ids_by_name:
-            value["id"] = ids_by_name[value["name"]]
+        normalized_name = _normalize_entity_name(value.name)
+        if normalized_name in ids_by_name:
+            value.name = normalized_name
+            value.id = ids_by_name[normalized_name]
             continue
 
         # Not a existing correspondent or document_type, hallucinated by LLM --- see comment above.
         keep_as_new = interrupt({"kind": "hallucination", "entity_type": entity_type, "filename": filename, "entity": value})
-        new_entity_proposal = {
-            "entity_type": entity_type,
-            "name": value["name"],
-            "description": value["reasoning"],
-            "reasoning": value["reasoning"],
-        }
+        new_entity_proposal = NewEntityProposal(entity_type=entity_type, name=value.name, description=value.reasoning, reasoning=value.reasoning)
         if keep_as_new:
             proposal[new_entity_type] = new_entity_proposal
         else:
@@ -177,7 +186,7 @@ def collect_hallucination_answer(hallucinated_proposal: dict[str, Any]) -> bool:
     """Turns a 'hallucination' interrupt into a y/n question for the user."""
     entity = hallucinated_proposal["entity"]
     entity_type = hallucinated_proposal["entity_type"]
-    print(f'\nProposal for "{hallucinated_proposal["filename"]}" used a {entity_type} not found in Paperless-ngx (likely a hallucination): "{entity["name"]}".')
+    print(f'\nProposal for "{hallucinated_proposal["filename"]}" used a {entity_type} not found in Paperless-ngx (likely a hallucination): "{entity.name}".')
     return ask_yes_no("Treat it as a new entity instead of rejecting it?")
 
 
@@ -193,10 +202,10 @@ def collect_review_answer(proposal_to_verify: dict[str, Any]) -> dict[str, Any]:
     answer: dict[str, Any] = {"accept_all": False}
 
     answer["proposed_existing_tags"] = [
-        ask_yes_no(f'  Keep tag "{tag["name"]}" (confidence={tag["confidence"]:.2f})?') for tag in proposal["proposed_existing_tags"]
+        ask_yes_no(f'  Keep tag "{tag.name}" (confidence={tag.confidence:.2f})?') for tag in proposal["proposed_existing_tags"]
     ]
     answer["proposed_new_tags"] = [
-        ask_yes_no(f'  Add new tag "{tag["name"]}" - {tag["description"]}?') for tag in proposal.get("proposed_new_tags") or []
+        ask_yes_no(f'  Add new tag "{tag.name}" - {tag.description}?') for tag in proposal.get("proposed_new_tags") or []
     ]
 
     for proposal_key, label in (
@@ -206,6 +215,6 @@ def collect_review_answer(proposal_to_verify: dict[str, Any]) -> dict[str, Any]:
         ("proposed_new_document_type", "new document type"),
     ):
         value = proposal.get(proposal_key)
-        answer[proposal_key] = ask_yes_no(f'  Accept {label} "{value["name"]}"?') if value else None
+        answer[proposal_key] = ask_yes_no(f'  Accept {label} "{value.name}"?') if value else None
 
     return answer

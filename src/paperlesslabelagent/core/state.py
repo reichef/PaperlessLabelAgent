@@ -1,29 +1,38 @@
-from typing import Any, Literal, NotRequired, TypedDict
+from dataclasses import dataclass
+from typing import Any, Literal, TypedDict
 
 EntityType = Literal["tag", "correspondent", "document_type"]
 
 
-class ExistingMatch(TypedDict):
+@dataclass
+class ExistingMatch:
     """A proposed match against an entity that already exists in the set of tags, correspondents and document types"""
 
     name: str
     confidence: float
     reasoning: str
-    # Only present once the match has been verified against existing_entities (see
-    # check_and_correct_single_proposal) - the LLM itself never produces this, it only knows names.
-    id: NotRequired[int]
+    # Set by check_and_correct_single_proposal, resolved against existing_entities by name -
+    # the LLM itself never produces this, it only knows names. This may still be a negative
+    # placeholder id afterward: if the matched entity is itself a not-yet-persisted new entity
+    # from an earlier proposal (folded into existing_entities by merge_confirmed_new_entities,
+    # see core/nodes/entities.py), that's what's in the pool at match time. It's only
+    # guaranteed to be a real, positive Paperless-ngx id once persist_new_entities'
+    # propagation pass (core/nodes/resultpersistence.py) has run.
+    id: int | None = None
 
 
-class NewEntityProposal(TypedDict):
+@dataclass
+class NewEntityProposal:
     """A proposed new tag, correspondent or document type"""
 
     entity_type: EntityType
     name: str
     description: str
     reasoning: str
-    # Only present once the entity has been folded into existing_entities with a placeholder id
-    # (see merge_confirmed_new_entities), later replaced by the real Paperless-ngx id on persist.
-    id: NotRequired[int]
+    # Set to a negative placeholder id once folded into existing_entities (see
+    # merge_confirmed_new_entities), later replaced with the real Paperless-ngx id by
+    # persist_new_entities.
+    id: int | None = None
 
 
 class FileProposal(TypedDict):
