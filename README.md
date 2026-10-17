@@ -50,6 +50,8 @@ python -m paperlesslabelagent.agent
 
 The agent will fetch your existing entities, process every PDF in `INPUT_FOLDER`, and then walk promts each proposal in the terminal, asking `[y/n]` questions as needed. Once every file is either confirmed or has exhausted its retry attempts, the run ends with a summary of what was and wasn't resolved.
 
+With the iterative strategy, each document is uploaded to Paperless-ngx as soon as you confirm it, and then deleted or moved to `INPUT_FOLDER/processed/` (see `DELETE_INPUT_FILES_AFTER_UPLOAD`). If the agent is aborted, everything confirmed so far is already in Paperless-ngx and out of `INPUT_FOLDER`; start the agent again to continue with the remaining files. A confirmed document cannot be undone from within the agent — correct it directly in Paperless-ngx.
+
 For setting the execution strategy, for example, set `STRATEGY=iterative` in `.env` (or `STRATEGY=iterative python -m paperlesslabelagent.agent`) to use the iterative strategy.
 
 ## Current limitations
