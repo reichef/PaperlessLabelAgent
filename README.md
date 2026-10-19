@@ -51,7 +51,7 @@ Each document is uploaded to Paperless-ngx as soon as you confirm it, and then d
 
 ## Current limitations
 
-- Only PDF files are currently supported.
+- Only PDF files are supported.
   
 ## License
 
