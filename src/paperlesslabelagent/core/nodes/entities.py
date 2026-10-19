@@ -26,6 +26,8 @@ def load_documents(state: AgentState) -> dict[str, Any]:
     file_texts: dict[str, str] = {}
     for filename in os.listdir(input_folder):
         file_path = os.path.join(input_folder, filename)
+        if not os.path.isfile(file_path):
+            continue  # e.g. the processed/ folder persist_file_proposals moves uploaded files into
 
         # TODO We can add other file types supported by Paperless-ngx here, but for now, we will just handle PDF files.
         file_texts[filename] = extractTextFromPDF(filename, file_path)

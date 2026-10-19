@@ -1,4 +1,5 @@
 import os
+import shutil
 from dataclasses import replace
 from typing import Any
 
@@ -14,6 +15,8 @@ ENTITY_API_NAMES = {
     DOCUMENT_TYPES_API_NAME: create_document_type,
 }
 
+PROCESSED_FOLDER_NAME = "processed"
+
 
 def _simulate_create(category_key: str, name: str, existing_entities: dict[str, Any]) -> dict[str, Any]:
     """Mock-mode stand-in for create_tag/create_correspondent/create_document_type: no
@@ -26,6 +29,26 @@ def _simulate_create(category_key: str, name: str, existing_entities: dict[str, 
 def _simulate_upload(filename: str) -> dict[str, Any]:
     """Mock-mode stand-in for upload_document: no API_URL to call, so fake a task id instead."""
     return {"task_id": f"mock-task-{filename}"}
+
+
+def _move_to_processed_folder(file_path: str, input_folder: str) -> str:
+    """Moves an uploaded file into <input_folder>/processed, so the input folder only ever holds
+    the work that remains and a restarted run doesn't pick the file up again. If a file of the
+    same name is already there, a numeric suffix is appended before the extension
+    ("invoice (1).pdf") instead of overwriting the earlier original. Returns the target path."""
+    processed_folder = os.path.join(input_folder, PROCESSED_FOLDER_NAME)
+    os.makedirs(processed_folder, exist_ok=True)
+
+    filename = os.path.basename(file_path)
+    stem, extension = os.path.splitext(filename)
+    target_path = os.path.join(processed_folder, filename)
+    clash_suffix = 1
+    while os.path.exists(target_path):
+        target_path = os.path.join(processed_folder, f"{stem} ({clash_suffix}){extension}")
+        clash_suffix += 1
+
+    shutil.move(file_path, target_path)
+    return target_path
 
 
 def _propagate_real_id(entity: ExistingMatch | NewEntityProposal | None, real_id_by_placeholder: dict[int, int]) -> None:
@@ -107,6 +130,7 @@ def persist_new_entities(state: AgentState) -> dict[str, Any]:
 # Postconditions: 
 # - The files are uploaded to Paperless-ngx with the assigned tags, correspondent and document type. The state now contains the upload results for each file.
 # - Only files are uploaded only if their proposal is confirmed.
+# - Each uploaded file is removed from the input folder: deleted if DELETE_INPUT_FILES_AFTER_UPLOAD=true, otherwise moved to <input_folder>/processed.
 def persist_file_proposals(state: AgentState) -> dict[str, Any]:
     """ Persists the file proposals to Paperless-ngx by uploading the files and assigning the tags, correspondents and document types."""
     ACCOUNT, PASSWORD, API_URL = os.getenv("ACCOUNT"), os.getenv("PASSWORD"), os.getenv("API_URL")
@@ -152,5 +176,7 @@ def persist_file_proposals(state: AgentState) -> dict[str, Any]:
 
         if delete_after_upload:
             os.remove(file_path)
+        else:
+            _move_to_processed_folder(file_path, state["input_folder"])
 
     return {"upload_results": upload_results}
