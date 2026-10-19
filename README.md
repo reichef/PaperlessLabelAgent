@@ -1,5 +1,7 @@
 # PaperlessLabelAgent
 
+** This is an archive version of the agent that supports two different types of execution strategies. It had been archived because the sequential strategy only works reliable for a few documents because it does not handle interrupts**
+
 The paperless label agent classifies documents for [Paperless-ngx](https://docs.paperless-ngx.com/), proposing tags, a correspondent and a document type for each file in a dedicated folder.
 It asks you to confirm every proposition before finalizing the classification.
 
