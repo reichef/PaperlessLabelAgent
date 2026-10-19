@@ -8,8 +8,8 @@ from paperlesslabelagent.core.nodes.review import apply_review_answer, check_and
 from paperlesslabelagent.strategies.iterative.state import IterativeAgentState, IterativeFileProposal
 
 # Per-document classification attempts allowed before giving up on that one document and
-# moving on (unlike the sequential strategy's MAX_CLASSIFICATION_ATTEMPTS, this cap is
-# per-document, not global - see strategies.iterative.state.IterativeFileProposal).
+# moving on (the cap is per-document, not global - see
+# strategies.iterative.state.IterativeFileProposal).
 MAX_ATTEMPTS_PER_DOCUMENT = 3
 
 
@@ -61,9 +61,8 @@ def review_current_proposal(state: IterativeAgentState) -> dict[str, Any]:
     """Hallucination-checks and reviews the document classify_current_document just built,
     then - if confirmed - folds any newly-accepted entities into the existingEntities pool
     so later documents can match against them directly. All interrupt-driven or pure (no
-    LLM calls), safe to combine in one node for the same reason sequential's
-    check_and_correct_proposals/user_verify_proposals are each safe on their own: multiple
-    interrupt() calls plus pure logic around them replay safely, only LLM calls don't.
+    LLM calls), so safe to combine in one node: multiple interrupt() calls plus pure logic
+    around them replay safely, only LLM calls don't.
     """
     filename = state.get("current_filename")
     if filename is None:

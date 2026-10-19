@@ -8,8 +8,9 @@ The results have to be reviewed by the user to be accepted or rejected.
 
 - the project uses LangGraph, so structure every behavior into nodes and corresponding graphs
 - src contains all behavior for the agents 
-- there are two different interaction strategies captured in src/strategies. (a) an iterative stategy where the classification and user interaction is performed for each document, i.e., first for the first document, then for the second and so on. (b) a sequential strategy where classifications are first performed for all documents, and then the review process is triggered. 
-- src\core contains code common to both strategies. 
+- interaction strategies are captured in src/strategies. Currently there is only the iterative strategy, where the classification and user interaction is performed for each document, i.e., first for the first document, then for the second and so on. Each confirmed document is persisted immediately.
+- a sequential strategy (classify all documents first, then review them) was removed because unpersisted work is lost if a run aborts, which limits it to very few documents. Its advantage is that it needs the user's attention only once. It is preserved on the branch `archive/sequential-strategy` for a possible later reintroduction.
+- src\core contains code common to all strategies. 
 - test\paperless-instance-mock contains paperless content when no running paperless ngx instance is available. 
 
 
